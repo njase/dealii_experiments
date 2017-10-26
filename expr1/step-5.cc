@@ -15,6 +15,10 @@
 
  *
  * Author: Wolfgang Bangerth, University of Heidelberg, 1999
+ * Saurabh Mehta : Modified for experimentation
+ *  - changed dimension to 3, FE degree = 2
+ *  - change grid from spherical to tetrahedron
+ *  - changed output
  */
 
 
@@ -108,10 +112,14 @@ private:
 template <int dim>
 double coefficient (const Point<dim> &p)
 {
+#if 0 //= step-37
   if (p.square() < 0.5*0.5)
     return 20;
   else
     return 1;
+#endif 
+  
+  return 1. / (0.05 + 2.*p.square());
 }
 
 // @sect3{The <code>Step5</code> class implementation}
@@ -121,7 +129,7 @@ double coefficient (const Point<dim> &p)
 // This function is as before.
 template <int dim>
 Step5<dim>::Step5 () :
-  fe (1),
+  fe (2), // changed FE degree = step-37
   dof_handler (triangulation)
 {}
 
@@ -171,7 +179,7 @@ void Step5<dim>::setup_system ()
 template <int dim>
 void Step5<dim>::assemble_system ()
 {
-  QGauss<dim>  quadrature_formula(2);
+  QGauss<dim>  quadrature_formula(2); //TBD
 
   FEValues<dim> fe_values (fe, quadrature_formula,
                            update_values    |  update_gradients |
@@ -356,7 +364,7 @@ void Step5<dim>::output_results (const unsigned int cycle) const
   // In order to now actually generate a filename, we fill the stringstream
   // variable with the base of the filename, then the number part, and finally
   // the suffix indicating the file type:
-  filename << "solution-"
+  filename << "step-5_solution-"
            << cycle
            << ".eps";
 
@@ -394,6 +402,7 @@ void Step5<dim>::output_results (const unsigned int cycle) const
 template <int dim>
 void Step5<dim>::run ()
 {
+#if 0
   GridIn<dim> grid_in;
   grid_in.attach_triangulation (triangulation);
   std::ifstream input_file("circle-grid.inp");
@@ -469,28 +478,33 @@ void Step5<dim>::run ()
   static const SphericalManifold<dim> boundary;
   triangulation.set_all_manifold_ids_on_boundary(0);
   triangulation.set_manifold (0, boundary);
+#endif
 
-  for (unsigned int cycle=0; cycle<6; ++cycle)
-    {
-      std::cout << "Cycle " << cycle << ':' << std::endl;
+  //simplification, cubical domain and alignment with step-37 
+  for (unsigned int cycle=0; cycle<2; ++cycle)
+        {
+	  std::cout << "Cycle " << cycle << std::endl;
 
-      if (cycle != 0)
-        triangulation.refine_global (1);
-
-      // Now that we have a mesh for sure, we write some output and do all the
-      // things that we have already seen in the previous examples.
-      std::cout << "   Number of active cells: "
-                << triangulation.n_active_cells()
-                << std::endl
-                << "   Total number of cells: "
-                << triangulation.n_cells()
-                << std::endl;
-
-      setup_system ();
-      assemble_system ();
-      solve ();
-      output_results (cycle);
-    }
+          if (cycle == 0)
+            {
+              GridGenerator::hyper_cube (triangulation, 0., 1.);
+              triangulation.refine_global (3-dim);
+            }
+          triangulation.refine_global (1);          
+          
+          std::cout << "   Number of active cells: "
+                          << triangulation.n_active_cells()
+                          << std::endl
+                          << "   Total number of cells: "
+                          << triangulation.n_cells()
+                          << std::endl;
+                
+          setup_system ();
+          assemble_rhs ();
+          solve ();
+          output_results (cycle);
+          pcout << std::endl;
+        };
 }
 
 
@@ -500,7 +514,7 @@ void Step5<dim>::run ()
 // won't comment on it further:
 int main ()
 {
-  Step5<2> laplace_problem_2d;
-  laplace_problem_2d.run ();
+  Step5<3> laplace_problem_3d;
+  laplace_problem_3d.run ();
   return 0;
 }

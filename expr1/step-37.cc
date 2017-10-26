@@ -17,7 +17,8 @@
  * Authors: Katharina Kormann, Martin Kronbichler, Uppsala University,
  * 2009-2012, updated to MPI version with parallel vectors in 2016
  * Saurabh Mehta - Modified from step-37 for experimentation.
- *    - remved MPI
+ *    - removed MPI
+ *    - changed output = step-5
  */
 
 
@@ -1133,6 +1134,22 @@ namespace Step37
     data_out.attach_dof_handler (dof_handler);
     data_out.add_data_vector (solution, "solution");
     data_out.build_patches ();
+    
+    //Copied from step-5
+    DataOutBase::EpsFlags eps_flags;
+    eps_flags.z_scaling = 4;
+    eps_flags.azimut_angle = 40;
+    eps_flags.turn_angle   = 10;
+    data_out.set_flags (eps_flags);
+    std::ostringstream filename;
+
+    filename << "step-37_solution-"
+               << cycle
+               << ".eps";
+
+    std::ofstream output (filename.str().c_str());
+
+    data_out.write_eps (output);
 
     //std::ostringstream filename;
     //filename << "solution-"
@@ -1175,7 +1192,9 @@ namespace Step37
   template <int dim>
   void LaplaceProblem<dim>::run ()
   {
-    for (unsigned int cycle=0; cycle<9-dim; ++cycle)
+	//  for (unsigned int cycle=0; cycle<9-dim; ++cycle)
+	  //simplification and alignment with step-5
+    for (unsigned int cycle=0; cycle<2; ++cycle)
       {
         pcout << "Cycle " << cycle << std::endl;
 
@@ -1185,6 +1204,13 @@ namespace Step37
             triangulation.refine_global (3-dim);
           }
         triangulation.refine_global (1);
+        
+        pout << "   Number of active cells: "
+                  << triangulation.n_active_cells()
+                  << std::endl
+                  << "   Total number of cells: "
+                  << triangulation.n_cells()
+                  << std::endl;
         setup_system ();
         assemble_rhs ();
         solve ();
