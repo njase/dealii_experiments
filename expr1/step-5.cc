@@ -19,6 +19,7 @@
  *  - changed dimension to 3, FE degree = 2
  *  - change grid from spherical to tetrahedron
  *  - changed output
+ *  - added time monitoring
  */
 
 
@@ -29,6 +30,7 @@
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/function.h>
 #include <deal.II/base/logstream.h>
+#include <deal.II/base/timer.h>
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
@@ -39,6 +41,7 @@
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/grid/tria_accessor.h>
 #include <deal.II/grid/tria_iterator.h>
+#include <deal.II/grid/grid_generator.h>
 #include <deal.II/dofs/dof_accessor.h>
 #include <deal.II/dofs/dof_tools.h>
 #include <deal.II/fe/fe_q.h>
@@ -95,6 +98,7 @@ private:
 
   Vector<double>       solution;
   Vector<double>       system_rhs;
+  double               setup_time;
 };
 
 
@@ -130,7 +134,7 @@ double coefficient (const Point<dim> &p)
 template <int dim>
 Step5<dim>::Step5 () :
   fe (2), // changed FE degree = step-37
-  dof_handler (triangulation)
+  dof_handler (triangulation),setup_time(0.0)
 {}
 
 
@@ -142,6 +146,8 @@ Step5<dim>::Step5 () :
 template <int dim>
 void Step5<dim>::setup_system ()
 {
+  Timer time;
+	    
   dof_handler.distribute_dofs (fe);
 
   std::cout << "   Number of degrees of freedom: "
@@ -156,6 +162,10 @@ void Step5<dim>::setup_system ()
 
   solution.reinit (dof_handler.n_dofs());
   system_rhs.reinit (dof_handler.n_dofs());
+  
+  setup_time += time.wall_time();
+  std::cout << "Total setup_system time   (CPU/wall) "
+                              << time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 }
 
 
@@ -179,7 +189,9 @@ void Step5<dim>::setup_system ()
 template <int dim>
 void Step5<dim>::assemble_system ()
 {
-  QGauss<dim>  quadrature_formula(2); //TBD
+  Timer time;
+  
+  QGauss<dim>  quadrature_formula(3); //TBD
 
   FEValues<dim> fe_values (fe, quadrature_formula,
                            update_values    |  update_gradients |
@@ -246,6 +258,9 @@ void Step5<dim>::assemble_system ()
                                       system_matrix,
                                       solution,
                                       system_rhs);
+  setup_time += time.wall_time();
+  std::cout << "Total assemble_system time   (CPU/wall) "
+                                << time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 }
 
 
@@ -279,6 +294,8 @@ void Step5<dim>::assemble_system ()
 template <int dim>
 void Step5<dim>::solve ()
 {
+  Timer time;
+  
   SolverControl           solver_control (1000, 1e-12);
   SolverCG<>              solver (solver_control);
 
@@ -288,9 +305,16 @@ void Step5<dim>::solve ()
   solver.solve (system_matrix, solution, system_rhs,
                 preconditioner);
 
-  std::cout << "   " << solver_control.last_step()
-            << " CG iterations needed to obtain convergence."
-            << std::endl;
+  //std::cout << "   " << solver_control.last_step()
+  //          << " CG iterations needed to obtain convergence."
+  //          << std::endl;
+  
+  setup_time += time.wall_time();
+  
+  std::cout << "Time solve ("
+        << solver_control.last_step()
+        << " iterations)  (CPU/wall) " << time.cpu_time() << "s/"
+        << time.wall_time() << "s\n";
 }
 
 
@@ -309,6 +333,7 @@ void Step5<dim>::output_results (const unsigned int cycle) const
 
   data_out.build_patches ();
 
+#if 0
   // For this example, we would like to write the output directly to a file in
   // Encapsulated Postscript (EPS) format. The library supports this, but
   // things may be a bit more difficult sometimes, since EPS is a printing
@@ -348,7 +373,8 @@ void Step5<dim>::output_results (const unsigned int cycle) const
   // time using an input file (step-19 doesn't show many other things; you
   // should feel free to read over it even if you haven't done step-6 to
   // step-18 yet).
-
+#endif
+  
   // Finally, we need the filename to which the results are to be written. We
   // would like to have it of the form <code>solution-N.eps</code>, where N is
   // the number of the refinement cycle. Thus, we have to convert an integer
@@ -366,7 +392,7 @@ void Step5<dim>::output_results (const unsigned int cycle) const
   // the suffix indicating the file type:
   filename << "step-5_solution-"
            << cycle
-           << ".eps";
+           << ".vtk";
 
   // We can get whatever we wrote to the stream using the <code>str()</code>
   // function. The result is a string which we have to convert to a char*
@@ -374,7 +400,8 @@ void Step5<dim>::output_results (const unsigned int cycle) const
   // output stream and then write the data to the file:
   std::ofstream output (filename.str().c_str());
 
-  data_out.write_eps (output);
+  //data_out.write_eps (output);
+  data_out.write_vtk (output);
 }
 
 
@@ -481,7 +508,7 @@ void Step5<dim>::run ()
 #endif
 
   //simplification, cubical domain and alignment with step-37 
-  for (unsigned int cycle=0; cycle<2; ++cycle)
+  for (unsigned int cycle=0; cycle<3; ++cycle)
         {
 	  std::cout << "Cycle " << cycle << std::endl;
 
@@ -500,10 +527,14 @@ void Step5<dim>::run ()
                           << std::endl;
                 
           setup_system ();
-          assemble_rhs ();
+          assemble_system ();
           solve ();
           output_results (cycle);
-          pcout << std::endl;
+          
+          std::cout << "Overall solution time   (wall) "
+                               << setup_time << std::endl;
+          
+          std::cout << std::endl;
         };
 }
 

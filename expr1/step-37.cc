@@ -835,10 +835,10 @@ namespace Step37
                                               Functions::ZeroFunction<dim>(),
                                               constraints);
     constraints.close();
-    setup_time += time.wall_time();
-    time_details << "Distribute DoFs & B.C.     (CPU/wall) "
-                 << time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
-    time.restart();
+    //setup_time += time.wall_time();
+    //time_details << "Distribute DoFs & B.C.     (CPU/wall) "
+    //             << time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+    //time.restart();
 
     {
       typename MatrixFree<dim,double>::AdditionalData additional_data;
@@ -858,10 +858,10 @@ namespace Step37
     system_matrix.initialize_dof_vector(solution);
     system_matrix.initialize_dof_vector(system_rhs);
 
-    setup_time += time.wall_time();
-    time_details << "Setup matrix-free system   (CPU/wall) "
-                 << time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
-    time.restart();
+    //setup_time += time.wall_time();
+    //time_details << "Setup matrix-free system   (CPU/wall) "
+    //             << time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+    //time.restart();
 
     // Next, initialize the matrices for the multigrid method on all the
     // levels. The data structure MGConstrainedDoFs keeps information about
@@ -906,8 +906,10 @@ namespace Step37
         mg_matrices[level].evaluate_coefficient(Coefficient<dim>());
       }
     setup_time += time.wall_time();
-    time_details << "Setup matrix-free levels   (CPU/wall) "
-                 << time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+    //time_details << "Setup matrix-free levels   (CPU/wall) "
+    //             << time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+    time_details << "Total setup_system time   (CPU/wall) "
+                            << time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
   }
 
 
@@ -957,12 +959,13 @@ namespace Step37
   void LaplaceProblem<dim>::solve ()
   {
     Timer time;
+    
     MGTransferMatrixFree<dim,float> mg_transfer(mg_constrained_dofs);
     mg_transfer.build(dof_handler);
-    setup_time += time.wall_time();
-    time_details << "MG build transfer time     (CPU/wall) " << time.cpu_time()
-                 << "s/" << time.wall_time() << "s\n";
-    time.restart();
+    //setup_time += time.wall_time();
+    //time_details << "MG build transfer time     (CPU/wall) " << time.cpu_time()
+    //             << "s/" << time.wall_time() << "s\n";
+    //time.restart();
 
     // As a smoother, this tutorial program uses a Chebyshev iteration instead
     // of SOR in step-16. (SOR would be very difficult to implement because we
@@ -1093,19 +1096,20 @@ namespace Step37
 
     SolverControl solver_control (100, 1e-12*system_rhs.l2_norm());
     SolverCG<LinearAlgebra::distributed::Vector<double> > cg (solver_control);
-    setup_time += time.wall_time();
-    time_details << "MG build smoother time     (CPU/wall) " << time.cpu_time()
-                 << "s/" << time.wall_time() << "s\n";
-    pcout << "Total setup time               (wall) " << setup_time
-          << "s\n";
+    //setup_time += time.wall_time();
+    //time_details << "MG build smoother time     (CPU/wall) " << time.cpu_time()
+    //             << "s/" << time.wall_time() << "s\n";
+    //pcout << "Total setup time               (wall) " << setup_time
+    //      << "s\n";
 
-    time.reset();
-    time.start();
+    //time.reset();
+    //time.start();
     cg.solve (system_matrix, solution, system_rhs,
               preconditioner);
 
     constraints.distribute(solution);
-
+    
+    setup_time += time.wall_time();
     pcout << "Time solve ("
           << solver_control.last_step()
           << " iterations)  (CPU/wall) " << time.cpu_time() << "s/"
@@ -1135,21 +1139,15 @@ namespace Step37
     data_out.add_data_vector (solution, "solution");
     data_out.build_patches ();
     
-    //Copied from step-5
-    DataOutBase::EpsFlags eps_flags;
-    eps_flags.z_scaling = 4;
-    eps_flags.azimut_angle = 40;
-    eps_flags.turn_angle   = 10;
-    data_out.set_flags (eps_flags);
     std::ostringstream filename;
 
     filename << "step-37_solution-"
                << cycle
-               << ".eps";
+               << ".vtk";
 
     std::ofstream output (filename.str().c_str());
 
-    data_out.write_eps (output);
+    data_out.write_vtk (output);
 
     //std::ostringstream filename;
     //filename << "solution-"
@@ -1194,7 +1192,7 @@ namespace Step37
   {
 	//  for (unsigned int cycle=0; cycle<9-dim; ++cycle)
 	  //simplification and alignment with step-5
-    for (unsigned int cycle=0; cycle<2; ++cycle)
+    for (unsigned int cycle=0; cycle<3; ++cycle)
       {
         pcout << "Cycle " << cycle << std::endl;
 
@@ -1205,7 +1203,7 @@ namespace Step37
           }
         triangulation.refine_global (1);
         
-        pout << "   Number of active cells: "
+        pcout << "   Number of active cells: "
                   << triangulation.n_active_cells()
                   << std::endl
                   << "   Total number of cells: "
@@ -1214,7 +1212,10 @@ namespace Step37
         setup_system ();
         assemble_rhs ();
         solve ();
-        output_results (cycle);
+        output_results (cycle);        
+        time_details << "Overall solution time   (wall) "
+                             << setup_time << std::endl;
+        
         pcout << std::endl;
       };
   }
