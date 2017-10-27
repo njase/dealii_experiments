@@ -729,7 +729,7 @@ namespace Step37
     typedef LaplaceOperator<dim,degree_finite_element,float>  LevelMatrixType;
     MGLevelObject<LevelMatrixType>             mg_matrices;
 
-    LinearAlgebra::distributed::Vector<double> solution;
+    LinearAlgebra::distributed::Vector<double> solution;    
     LinearAlgebra::distributed::Vector<double> system_rhs;
 
     double                                     setup_time;
@@ -1148,7 +1148,23 @@ namespace Step37
     std::ofstream output (filename.str().c_str());
 
     data_out.write_vtk (output);
-
+    
+    output.close();
+    
+    std::ostringstream filename1;
+    filename1 << "step-37_solution-"
+            << cycle
+            << ".log";
+    
+    output.open(filename1.str().c_str());
+    
+    for (auto &elem : solution)
+    {	  
+    	output<<elem<<std::endl;  
+    }
+    
+    output.close();
+    
     //std::ostringstream filename;
     //filename << "solution-"
     //         << cycle
