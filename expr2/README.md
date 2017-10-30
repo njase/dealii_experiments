@@ -1,10 +1,14 @@
-# Experiment 1: Comparing the Matrix based and MatrixFree method for vector valued function, without solver
+# Experiment 2: Comparing the Matrix based and MatrixFree method for vector valued function, without solver
 
 ## Introduction
-This code will numerically solve the Poisson equation as defined in [step-37](https://www.dealii.org/8.5.0/doxygen/deal.II/step_37.html) with the strtegies in [step-5](https://www.dealii.org/8.5.0/doxygen/deal.II/step_5.html) and [step-37](https://www.dealii.org/8.5.0/doxygen/deal.II/step_37.html) without the solver step
+This code will numerically solve the Laplace equation as defined in [step-20](https://www.dealii.org/8.5.0/doxygen/deal.II/step_20.html) with the strategies in [step-22](https://www.dealii.org/8.5.0/doxygen/deal.II/step_22.html)
+It will further solve the same Laplace equation using [step-37](https://www.dealii.org/8.5.0/doxygen/deal.II/step_37.html) without the solver step(currently)
 
 ## FE
-FE_Q elements in 2D and 3D, with degrees 1, 2 and 3
+Q(k+1),Q(k) elements in 2D, with degrees 1
+
+TBD: 2D, with degrees 2 and 3
+TBD: 3D, with degrees 2 and 3
 
 ## Remarks
 1. No solver used
@@ -26,8 +30,9 @@ FE_Q elements in 2D and 3D, with degrees 1, 2 and 3
 To generate a makefile for this code using CMake and then compile in debug mode, type the following command 
 into the terminal from the main directory:
 
-	bash -x make.sh 5
-	bash -x make.sh 37
+	bash -x make.sh 20
+	bash -x make.sh 20-1
+	bash -x make.sh 37-1
 	
 	#These inturn call
 	#cmake . -DDEAL_II_DIR=/path/to/deal.II
