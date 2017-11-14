@@ -3,14 +3,14 @@
 #TBD: Add error checks
 
 case $1 in
-	5)
-		export STEPVAR=5
+	5-1)
+		export STEPVAR=5-1
 		;;
-	37)
-		export STEPVAR=37
+	37-1)
+		export STEPVAR=37-1
 		;;
 	*)
-		echo "Error in input ($1), should be either 5 or 37"
+		echo "Error in input ($1), should be either 5-1 or 37-1"
 		exit
 esac
 

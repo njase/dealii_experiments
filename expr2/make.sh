@@ -9,11 +9,11 @@ case $1 in
 	20-1)
 		export STEPVAR=20-1
 		;;
-	37-1)
-		export STEPVAR=37-1
+	20-2)
+		export STEPVAR=20-2
 		;;
 	*)
-		echo "Error in input ($1), should be either 20 or 20-1 or 37-1"
+		echo "Error in input ($1), should be either 20 or 20-1 or 20-2"
 		exit
 esac
 

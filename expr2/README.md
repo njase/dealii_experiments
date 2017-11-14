@@ -1,18 +1,15 @@
-# Experiment 2: Comparing the Matrix based and MatrixFree method for vector valued function, without solver
+# Experiment 2: Comparing the Matrix based and MatrixFree method for vector valued function
 
 ## Introduction
-This code will numerically solve the Laplace equation as defined in [step-20](https://www.dealii.org/8.5.0/doxygen/deal.II/step_20.html) with the strategies in [step-22](https://www.dealii.org/8.5.0/doxygen/deal.II/step_22.html)
-It will further solve the same Laplace equation using [step-37](https://www.dealii.org/8.5.0/doxygen/deal.II/step_37.html) without the solver step(currently)
+Step-20.cc - Only added extra logs to original step-20 (Matrix based vector valued solver - Mixed laplace eqn)
+Step20-1.cc - Step-20 + replaced RT with FE_Q + changed degree from 0 to 2, changed dim from 2 to 3 (This is like in step-37)
+Step20-2.cc - Step20-1 + modified using MatrixFree (TBD: solver??)
 
 ## FE
-Q(k+1),Q(k) elements in 2D, with degrees 1
-
-TBD: 2D, with degrees 2 and 3
-TBD: 3D, with degrees 2 and 3
+Q(k+1),Q(k) elements
 
 ## Remarks
-1. No solver used
-2. MPI support is removed from step-37 program
+2. No MPI
 
 ## Results to compare
 1. Measurement of computation time for different phases with problem size = TBD DoF
@@ -32,7 +29,7 @@ into the terminal from the main directory:
 
 	bash -x make.sh 20
 	bash -x make.sh 20-1
-	bash -x make.sh 37-1
+	bash -x make.sh 20-2
 	
 	#These inturn call
 	#cmake . -DDEAL_II_DIR=/path/to/deal.II

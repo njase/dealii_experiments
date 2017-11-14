@@ -18,7 +18,8 @@
  * Saurabh Mehta - modified for experimentation
  *   - added log output
  *   - changed RT to Qk-Qk-1
- *   - modified degree from 0 to 1
+ *   - modified degree from 0 to 2
+ *   - modified dimension from 2 to 3
  */
 
 
@@ -925,7 +926,9 @@ namespace Step20
   {
     make_grid_and_dofs();
     assemble_system ();
+#if 0
     solve ();
+#endif
     compute_errors ();
     output_results ();
   }
@@ -946,7 +949,7 @@ int main ()
       using namespace dealii;
       using namespace Step20;
 
-      MixedLaplaceProblem<2> mixed_laplace_problem(1);
+      MixedLaplaceProblem<3> mixed_laplace_problem(2);
       mixed_laplace_problem.run ();
     }
   catch (std::exception &exc)

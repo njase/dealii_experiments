@@ -15,7 +15,8 @@
 
  *
  * Author: Wolfgang Bangerth, University of Heidelberg, 1999
- * Saurabh Mehta : Modified for experimentation
+ * Saurabh Mehta : Modified for experimentation for comparison against step-37-1
+ *  - Changed coefficent calculation = step-37-1
  *  - changed dimension to 3, FE degree = 2
  *  - change grid from spherical to tetrahedron
  *  - changed output

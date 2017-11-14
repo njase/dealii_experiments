@@ -7,8 +7,8 @@ if($ENV{STEPVAR} STREQUAL "20")
 	SET(TARGET "step-20")
 elseif($ENV{STEPVAR} STREQUAL "20-1")
 	SET(TARGET "step-20-1")
-elseif($ENV{STEPVAR} STREQUAL "37-1")
-	SET(TARGET "step-37-1")
+elseif($ENV{STEPVAR} STREQUAL "20-2")
+	SET(TARGET "step-20-2")
 endif()
 
 # Declare all source files the target consists of. Here, this is only
