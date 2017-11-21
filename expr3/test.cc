@@ -235,7 +235,7 @@ struct EvaluateAsymmetric
         values_quad[c][q] += values_dofs[c][shape_info.dofs_per_component_on_cell-1];
 #endif
 
-  //Call thyself  
+  //Call thyself, increase c by 1
   EvaluateAsymmetric<type, dim, fe_degree_1c, fe_degree_2c, fe_degree_3c,
     	  n_q_points_1d_1c, n_q_points_1d_2c, n_q_points_1d_3c,
     	  n_components, c+1, Number>::
@@ -248,7 +248,7 @@ struct EvaluateAsymmetric
 
 
 
-//partial specialization
+//partial specialization with c = n_components
 template <MatrixFreeFunctions::ElementType type, int dim, 
 			int fe_degree_1c, int fe_degree_2c, int fe_degree_3c, //fe degree for 3 coordinates
           int n_q_points_1d_1c, int n_q_points_1d_2c, int n_q_points_1d_3c, //quad points in 1-D for 3 coordinates
@@ -313,34 +313,138 @@ evaluate_asymmetric (const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number
 
 int main()
 {
-	const int dim = 2, fe_degree = 2, n_q_points_1d = 4, n_components = 1;
+	const int dim = 2, fe_degree = 2, n_q_points_1d = 3, n_components = 1;
+	//TBD: For n_components > 1, vector-valued problem has to be constructed
 	const int fe_degree_1c = 2, fe_degree_2c = 2, fe_degree_3c = 2;
-	const int n_q_points_1d_1c = 4, n_q_points_1d_2c = 4, n_q_points_1d_3c = 4;
-	using Number = float;
+	const int n_q_points_1d_1c = 3, n_q_points_1d_2c = 3, n_q_points_1d_3c = 3;
+	using Number = double;
 	
-	const internal::MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info;
-	const internal::MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> new_shape_info[n_components];
-	VectorizedArray<Number> *values_dofs_actual[n_components];
-	VectorizedArray<Number> *values_quad[n_components];	
-	VectorizedArray<Number> *gradients_quad[n_components][dim];
-	VectorizedArray<Number> *hessians_quad[n_components][(dim*(dim+1))/2];
-	VectorizedArray<Number> *scratch_data;
+	///////////////////
+	//in
+	internal::MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info_old_impl;
+	internal::MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info_new_impl[n_components];
+
+	VectorizedArray<Number> *values_dofs_actual[n_components]; //in
+	VectorizedArray<Number> *scratch_data; //in
+
 	const bool evaluate_values = true, evaluate_gradients = false, evaluate_hessians = false;
+
+	//out
+	VectorizedArray<Number> *values_quad_old_impl[n_components],
+							*values_quad_new_impl[n_components];
+	VectorizedArray<Number> *gradients_quad_old_impl[n_components][dim],
+							*gradients_quad_new_impl[n_components][dim];
+	VectorizedArray<Number> *hessians_quad_old_impl[n_components][(dim*(dim+1))/2],
+							*hessians_quad_new_impl[n_components][(dim*(dim+1))/2];
+
 	
+	/////For simplicity, we use arrays instead of allocating memory to above output variables
+	const unsigned int first_selected_component = 0;
+	FE_Q<dim> fe(fe_degree);
+	QGauss<1> quad(n_q_points_1d);
+
+	shape_info_old_impl.reinit(quad, fe, fe.component_to_base_index(first_selected_component).first);
+
+	//Give known values to values_dofs_actual, i.e. to nodal_values
+	const unsigned int dofs_cnt_per_cell = Utilities::fixed_int_power<fe_degree+1,dim>::value;
+	const unsigned int n_array_elements = VectorizedArray<Number>::n_array_elements;
+	const unsigned int n_elements = static_cast<int>(std::ceil(dofs_cnt_per_cell/static_cast<float>(n_array_elements)));
+
+	using namespace std;
+	cout<<endl<<"======= parameters ============"<<endl<<endl;
+
+	cout<<"components = "<<n_components<<"dim = "<<dim<<"  fe_degree = "<<fe_degree<<"  n_q_points_1d = "<<n_q_points_1d<<endl;
+	cout<<"DOF per cell = "<<dofs_cnt_per_cell<<" length of one vectorized element = "<<n_array_elements<<endl;
+	cout<<"Number of vectorized elements needed = "<<n_elements<<endl;
+
+	cout<<endl<<"======= ========== ============"<<endl;
+
+	VectorizedArray<Number> nodal_values[n_elements];
+
+	for (int d = 0; d < n_elements; d++)
+	{
+		for (int n = 0; n < n_array_elements; n++)
+		{
+			nodal_values[d][n] = n%n_array_elements + 1;
+		}
+	}
+
+	VectorizedArray<Number> out_values_quad_old_impl[n_components][n_elements],
+							out_values_quad_new_impl[n_components][n_elements];
+	VectorizedArray<Number> out_gradients_quad_old_impl[n_components][dim][n_elements],
+							out_gradients_quad_new_impl[n_components][dim][n_elements];
+	VectorizedArray<Number> out_hessians_quad_old_impl[n_components][(dim*(dim+1))/2][n_elements],
+							out_hessians_quad_new_impl[n_components][(dim*(dim+1))/2][n_elements];
+
+	for (int c = 0; c < n_components; c++)
+	{
+		//Same shape info for each component = old impl
+		shape_info_new_impl[c].reinit(quad, fe, fe.component_to_base_index(first_selected_component).first);
+
+		//Same nodal values for all the components
+		values_dofs_actual[c] = nodal_values;
+
+		values_quad_old_impl[c] = out_values_quad_old_impl[c];
+		values_quad_new_impl[c] = out_values_quad_new_impl[c];
+
+		for (int d = 0; d < dim; d++)
+		{
+			gradients_quad_old_impl[c][d] = out_gradients_quad_old_impl[c][d];
+			gradients_quad_new_impl[c][d] = out_gradients_quad_new_impl[c][d];
+		}
+
+		for (int e = 0; e < (dim*(dim+1))/2; e++)
+		{
+			hessians_quad_old_impl[c][e] = out_hessians_quad_old_impl[c][e];
+			hessians_quad_new_impl[c][e] = out_hessians_quad_new_impl[c][e];
+		}
+	}
+
+	//THIS IS TBD. So currently, allocate a large memory to scratch_data
+	scratch_data = new VectorizedArray<Number> [1000];
+
+#if 0
+	std::cout<<"Before =============="<<std::endl;
+
+	for (int c = 0; c < n_components; c++)
+	{
+		for (int d = 0; d < n_elements; d++)
+		{
+			for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+			{
+				bool res = (std::abs(out_values_quad_old_impl[c][d][n] - out_values_quad_new_impl[c][d][n]) < 10e-4)?true:false;
+				std::cout<<"(c,d) = ("<<out_values_quad_old_impl[c][d][n]<<", "<<out_values_quad_new_impl[c][d][n]<<")   AND  before = "<<res<<std::endl;
+			}
+		}
+	}
+#endif
+
 	internal::FEEvaluationImpl<internal::MatrixFreeFunctions::tensor_general, dim, 
 							fe_degree, n_q_points_1d, n_components, Number>
-	::evaluate(shape_info, values_dofs_actual, values_quad,
-            gradients_quad, hessians_quad, scratch_data,
+	::evaluate(shape_info_old_impl, values_dofs_actual, values_quad_old_impl,
+            gradients_quad_old_impl, hessians_quad_old_impl, scratch_data,
             evaluate_values, evaluate_gradients, evaluate_hessians);
 	
 	evaluate_asymmetric<internal::MatrixFreeFunctions::tensor_general, dim,
 			fe_degree_1c,fe_degree_2c, fe_degree_3c,
 			n_q_points_1d_1c, n_q_points_1d_2c, n_q_points_1d_3c,
 			n_components, Number>
-	(new_shape_info, values_dofs_actual, values_quad,
-	            gradients_quad, hessians_quad, scratch_data,
+			(shape_info_new_impl, values_dofs_actual, values_quad_new_impl,
+	            gradients_quad_new_impl, hessians_quad_new_impl, scratch_data,
 	            evaluate_values, evaluate_gradients, evaluate_hessians);
-	
-	
-	
+
+	//Compare output of both and tell result
+	std::cout<<"Result =============="<<std::endl;
+
+	for (int c = 0; c < n_components; c++)
+	{
+		for (int d = 0; d < n_elements; d++)
+		{
+			for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+			{
+				bool res = (std::abs(out_values_quad_old_impl[c][d][n] - out_values_quad_new_impl[c][d][n]) < 10e-4)?true:false;
+				std::cout<<"(old,new) = ("<<out_values_quad_old_impl[c][d][n]<<", "<<out_values_quad_new_impl[c][d][n]<<")   AND  result = "<<res<<std::endl;
+			}
+		}
+	}
 }

@@ -2,18 +2,9 @@
 
 #TBD: Add error checks
 
-case $1 in
-	5-1)
-		export STEPVAR=5-1
-		;;
-	37-1)
-		export STEPVAR=37-1
-		;;
-	*)
-		echo "Error in input ($1), should be either 5-1 or 37-1"
-		exit
-esac
 
+export CXX=/export/home/smehta/opt/clang5.0.0/bin/clang++
+export CC=/export/home/smehta/opt/clang5.0.0/bin/clang
 rm -fr CMakeCache.txt CMakeFiles
-cmake . -DDEAL_II_DIR=../../install/dealii_clang
+cmake . -DDEAL_II_DIR=../../install_dealii/clang_build
 make -j4
