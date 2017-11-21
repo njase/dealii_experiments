@@ -313,10 +313,10 @@ evaluate_asymmetric (const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number
 
 int main()
 {
-	const int dim = 2, fe_degree = 2, n_q_points_1d = 3, n_components = 1;
+	const int dim = 2, fe_degree = 1, n_q_points_1d = 2, n_components = 1;
 	//TBD: For n_components > 1, vector-valued problem has to be constructed
-	const int fe_degree_1c = 2, fe_degree_2c = 2, fe_degree_3c = 2;
-	const int n_q_points_1d_1c = 3, n_q_points_1d_2c = 3, n_q_points_1d_3c = 3;
+	const int fe_degree_1c = 1, fe_degree_2c = 1, fe_degree_3c = 1;
+	const int n_q_points_1d_1c = 2, n_q_points_1d_2c = 2, n_q_points_1d_3c = 2;
 	using Number = double;
 	
 	///////////////////
@@ -353,9 +353,9 @@ int main()
 	using namespace std;
 	cout<<endl<<"======= parameters ============"<<endl<<endl;
 
-	cout<<"components = "<<n_components<<"dim = "<<dim<<"  fe_degree = "<<fe_degree<<"  n_q_points_1d = "<<n_q_points_1d<<endl;
-	cout<<"DOF per cell = "<<dofs_cnt_per_cell<<" length of one vectorized element = "<<n_array_elements<<endl;
-	cout<<"Number of vectorized elements needed = "<<n_elements<<endl;
+	cout<<"components = "<<n_components<<" ,dim = "<<dim<<"  ,fe_degree = "<<fe_degree<<"  ,n_q_points_1d = "<<n_q_points_1d<<endl;
+	cout<<"DOF per cell = "<<dofs_cnt_per_cell<<" ,length of one VectorArray element = "<<n_array_elements<<endl;
+	cout<<"Number of vectorArray elements needed = "<<n_elements<<endl;
 
 	cout<<endl<<"======= ========== ============"<<endl;
 
