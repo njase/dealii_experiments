@@ -1,4 +1,4 @@
-# Experiment 3: To allow different polyomial basis ub each coordinate direction in FEEvaluationImpl (evaluation_kernels.h)
+# Experiment 3: To allow different polyomial basis in each coordinate direction in FEEvaluationImpl (evaluation_kernels.h)
 
 ## Introduction
 
