@@ -243,6 +243,37 @@ template <MatrixFreeFunctions::ElementType type, int dim, int fe_degree,
 };
 
 
+template <int dim, int fe_degree, int n_q_points_1d, typename Number>
+struct SelectEvaluatorNew
+{
+
+	 static void evaluate (const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> &shape_info,
+             VectorizedArray<Number> *values_dofs_actual,
+             VectorizedArray<Number> *values_quad,
+             VectorizedArray<Number> *gradients_quad[dim],
+             VectorizedArray<Number> *hessians_quad[(dim*(dim+1))/2],
+             VectorizedArray<Number> *scratch_data,
+             const bool               evaluate_values,
+             const bool               evaluate_gradients,
+             const bool               evaluate_hessians)
+{
+  Assert(fe_degree>=0  && n_q_points_1d>0, ExcInternalError());
+
+
+ if (shape_info.element_type == internal::MatrixFreeFunctions::tensor_general)
+    {
+      FEEvaluationImplNew<internal::MatrixFreeFunctions::tensor_general,
+               dim, fe_degree, n_q_points_1d, Number>
+               ::evaluate(shape_info, values_dofs_actual, values_quad,
+                          gradients_quad, hessians_quad, scratch_data,
+                          evaluate_values, evaluate_gradients, evaluate_hessians);
+    }
+  else
+    AssertThrow(false, ExcNotImplemented());
+}
+};
+
+
 void new_evaluate(const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> (&shape_info)[g_n_components], //in
         VectorizedArray<Number> *values_dofs_actual[], //in
         VectorizedArray<Number> *values_quad[],
@@ -264,6 +295,13 @@ void new_evaluate(const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> 
 	//know about fe_degree and n_q_points_1d for all components.
 	//And if it does, why are we doing all this!!
 
+	SelectEvaluatorNew<g_dim, fe_degree_new[0], n_q_points_1d_new[0], Number>
+	  ::evaluate (shape_info[0], values_dofs_actual[0], values_quad[0],
+			  	  gradients_quad[0], hessians_quad[0], scratch_data,
+	              evaluate_values, evaluate_gradients, evaluate_hessians);
+
+
+#if 0
 	FEEvaluationImplNew<internal::MatrixFreeFunctions::tensor_general, g_dim,
 							fe_degree_new[0], n_q_points_1d_new[0], Number>
 		::evaluate(shape_info[0], values_dofs_actual[0], values_quad[0],
@@ -271,7 +309,6 @@ void new_evaluate(const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> 
 	            evaluate_values, evaluate_gradients, evaluate_hessians);
 
 	//This needs vector values FE, TBD
-#if 0
 	FEEvaluationImplNew<internal::MatrixFreeFunctions::tensor_general, dim,
 								fe_degree[1], n_q_points_1d[1], Number>
 		::evaluate(shape_info[1], values_dofs_actual[1], values_quad[1],
@@ -296,11 +333,10 @@ void old_evaluate(const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> 
         const bool               evaluate_gradients,
         const bool               evaluate_hessians)
 {
-	internal::FEEvaluationImpl<internal::MatrixFreeFunctions::tensor_general, g_dim,
-							g_fe_degree, g_n_q_points_1d, g_n_components, Number>
-	::evaluate(shape_info, values_dofs_actual, values_quad,
-			gradients_quad, hessians_quad, scratch_data,
-            evaluate_values, evaluate_gradients, evaluate_hessians);
+	  SelectEvaluator<g_dim, g_fe_degree, g_n_q_points_1d, g_n_components, Number>
+	  ::evaluate (shape_info, values_dofs_actual, values_quad,
+			  	  gradients_quad, hessians_quad, scratch_data,
+	              evaluate_values, evaluate_gradients, evaluate_hessians);
 }
 
 int main()
@@ -340,8 +376,8 @@ int main()
 	const int quad_cnt_per_cell = Utilities::fixed_int_power<g_n_q_points_1d,g_dim>::value;
 
 	const int n_array_elements = VectorizedArray<Number>::n_array_elements;
-	const int n_dof_elements = static_cast<int>(std::ceil(dofs_cnt_per_cell/static_cast<float>(n_array_elements)));
-	//const int n_dof_elements = 4;
+	//const int n_dof_elements = static_cast<int>(std::ceil(dofs_cnt_per_cell/static_cast<float>(n_array_elements)));
+	const int n_dof_elements = 10;
 	const int n_eval_elements = (dofs_cnt_per_cell * quad_cnt_per_cell)/static_cast<float>(n_array_elements);
 
 
@@ -373,10 +409,13 @@ int main()
 							out_hessians_quad_new_impl[g_n_components][(g_dim*(g_dim+1))/2][n_eval_elements];
 
 
+	shape_info_old_impl.element_type = internal::MatrixFreeFunctions::tensor_general;
+
 	for (int c = 0; c < g_n_components; c++)
 	{
 		//Same shape info for each component = old impl
 		shape_info_new_impl[c].reinit(quad, fe, fe.component_to_base_index(first_selected_component).first);
+		shape_info_new_impl[c].element_type = internal::MatrixFreeFunctions::tensor_general;
 
 		//Same nodal values for all the components
 		values_dofs_actual[c] = nodal_values;
