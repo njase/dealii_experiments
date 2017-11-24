@@ -9,7 +9,7 @@ using namespace dealii;
 using namespace dealii::internal;
 
 
-const int g_dim = 1, g_fe_degree = 1, g_n_q_points_1d = 2, g_n_components = 1;
+const int g_dim = 2, g_fe_degree = 1, g_n_q_points_1d = 4, g_n_components = 1;
 //TBD: For n_components > 1, vector-valued problem has to be constructed
 const int g_fe_degree_1c = g_fe_degree, g_fe_degree_2c = g_fe_degree, g_fe_degree_3c = g_fe_degree;
 const int g_n_q_points_1d_1c = g_n_q_points_1d, g_n_q_points_1d_2c = g_n_q_points_1d, g_n_q_points_1d_3c = g_n_q_points_1d;
@@ -264,8 +264,6 @@ void new_evaluate(const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> 
 	//know about fe_degree and n_q_points_1d for all components.
 	//And if it does, why are we doing all this!!
 
-	//FEEvaluationImplNew<internal::MatrixFreeFunctions::tensor_general, dim,
-	//							fe_degree_new[0], n_q_points_1d_new[0], Number>
 	FEEvaluationImplNew<internal::MatrixFreeFunctions::tensor_general, g_dim,
 							fe_degree_new[0], n_q_points_1d_new[0], Number>
 		::evaluate(shape_info[0], values_dofs_actual[0], values_quad[0],
@@ -336,23 +334,30 @@ int main()
 
 	shape_info_old_impl.reinit(quad, fe, fe.component_to_base_index(first_selected_component).first);
 
+	//TBD:This count will change when the dofs for each component are different
 	//Give known values to values_dofs_actual, i.e. to nodal_values
 	const int dofs_cnt_per_cell = Utilities::fixed_int_power<g_fe_degree+1,g_dim>::value;
+	const int quad_cnt_per_cell = Utilities::fixed_int_power<g_n_q_points_1d,g_dim>::value;
+
 	const int n_array_elements = VectorizedArray<Number>::n_array_elements;
-	const int n_elements = static_cast<int>(std::ceil(dofs_cnt_per_cell/static_cast<float>(n_array_elements)));
+	const int n_dof_elements = static_cast<int>(std::ceil(dofs_cnt_per_cell/static_cast<float>(n_array_elements)));
+	//const int n_dof_elements = 4;
+	const int n_eval_elements = (dofs_cnt_per_cell * quad_cnt_per_cell)/static_cast<float>(n_array_elements);
+
 
 	using namespace std;
 	cout<<endl<<"======= parameters ============"<<endl<<endl;
 
 	cout<<"components = "<<g_n_components<<" ,dim = "<<g_dim<<"  ,fe_degree = "<<g_fe_degree<<"  ,n_q_points_1d = "<<g_n_q_points_1d<<endl;
-	cout<<"DOF per cell = "<<dofs_cnt_per_cell<<" ,length of one VectorArray element = "<<n_array_elements<<endl;
-	cout<<"Number of vectorArray elements needed = "<<n_elements<<endl;
+	cout<<"DOF per cell = "<<dofs_cnt_per_cell<<", Quad points per cell = "<<quad_cnt_per_cell<<endl<<"Length of one VectorArray element = "<<n_array_elements<<endl;
+	//cout<<"Number of vectorArray elements used for dofs = "<<n_dof_elements<<endl;
+	cout<<"Number of vectorArray elements used for result = "<<n_eval_elements<<endl;
 
 	cout<<endl<<"======= ========== ============"<<endl;
 
-	VectorizedArray<Number> nodal_values[n_elements];
+	VectorizedArray<Number> nodal_values[n_dof_elements];
 
-	for (int d = 0; d < n_elements; d++)
+	for (int d = 0; d < n_dof_elements; d++)
 	{
 		for (int n = 0; n < n_array_elements; n++)
 		{
@@ -360,12 +365,12 @@ int main()
 		}
 	}
 
-	VectorizedArray<Number> out_values_quad_old_impl[g_n_components][n_elements],
-							out_values_quad_new_impl[g_n_components][n_elements];
-	VectorizedArray<Number> out_gradients_quad_old_impl[g_n_components][g_dim][n_elements],
-							out_gradients_quad_new_impl[g_n_components][g_dim][n_elements];
-	VectorizedArray<Number> out_hessians_quad_old_impl[g_n_components][(g_dim*(g_dim+1))/2][n_elements],
-							out_hessians_quad_new_impl[g_n_components][(g_dim*(g_dim+1))/2][n_elements];
+	VectorizedArray<Number> out_values_quad_old_impl[g_n_components][n_eval_elements],
+							out_values_quad_new_impl[g_n_components][n_eval_elements];
+	VectorizedArray<Number> out_gradients_quad_old_impl[g_n_components][g_dim][n_eval_elements],
+							out_gradients_quad_new_impl[g_n_components][g_dim][n_eval_elements];
+	VectorizedArray<Number> out_hessians_quad_old_impl[g_n_components][(g_dim*(g_dim+1))/2][n_eval_elements],
+							out_hessians_quad_new_impl[g_n_components][(g_dim*(g_dim+1))/2][n_eval_elements];
 
 
 	for (int c = 0; c < g_n_components; c++)
@@ -392,9 +397,6 @@ int main()
 		}
 	}
 
-
-
-
 	old_evaluate(shape_info_old_impl, values_dofs_actual, values_quad_old_impl,
 	            gradients_quad_old_impl, hessians_quad_old_impl, scratch_data,
 	            evaluate_values, evaluate_gradients, evaluate_hessians);
@@ -403,13 +405,14 @@ int main()
 	            gradients_quad_new_impl, hessians_quad_new_impl, scratch_data,
 	            evaluate_values, evaluate_gradients, evaluate_hessians);
 
+	cout<<"Computation finished...printing results"<<endl;
 
 	//Compare output of both and tell result
 	std::cout<<"Result =============="<<std::endl;
 
 	for (int c = 0; c < g_n_components; c++)
 	{
-		for (int d = 0; d < n_elements; d++)
+		for (int d = 0; d < n_eval_elements; d++)
 		{
 			for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
 			{
@@ -418,5 +421,8 @@ int main()
 			}
 		}
 	}
+
+
+	delete[] scratch_data;
 }
 
