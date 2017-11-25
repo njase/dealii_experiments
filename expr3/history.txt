@@ -1,5 +1,5 @@
 Tag: Description
 v0.1: Thought that n_components will always be <= coordinate directions, i.e. 3. Attempted template changes in a new function called evaluate_asymmetric() which takes fe_degree and n_q_points_1d for 3 directions, and tries to evaluate in the same way as existing FEEvaluationImpl::evaluate() function. Added test code for comparing the results in 1-D with the two approaches. Currently the test fails. Am not debugging further since the basis premise is incorrect.
-
+v0.2: Defined a new FEEvaluationImplNew which works only on one component. Correspondingly defined SelectEvaluatorNew. This allows us to call SelectEvaluatorNew separately for each component. This delinks the number of components and their FE evaluation. Tested only for n_components = 1 since >1 components need FESystem. Will take care in next steps.
 
 Next attempt:
