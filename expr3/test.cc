@@ -1,13 +1,21 @@
+#include <deal.II/grid/tria.h>
+#include <deal.II/grid/tria_accessor.h>
+#include <deal.II/grid/tria_iterator.h>
+#include <deal.II/grid/grid_generator.h>
+#include <deal.II/dofs/dof_tools.h>
+
 #include <deal.II/base/vectorization.h>
 #include <deal.II/matrix_free/matrix_free.h>
 #include <deal.II/matrix_free/shape_info.h>
 #include <deal.II/matrix_free/evaluation_kernels.h>
 #include <deal.II/matrix_free/tensor_product_kernels.h>
 #include <deal.II/matrix_free/evaluation_selector.h>
+#include <deal.II/fe/mapping_q.h>
+#include <deal.II/matrix_free/fe_evaluation.h>
 
 using namespace dealii;
 using namespace dealii::internal;
-
+using namespace std;
 
 const int g_dim = 2, g_fe_degree = 1, g_n_q_points_1d = 4, g_n_components = 1;
 //TBD: For n_components > 1, vector-valued problem has to be constructed
@@ -15,9 +23,205 @@ const int g_fe_degree_1c = g_fe_degree, g_fe_degree_2c = g_fe_degree, g_fe_degre
 const int g_n_q_points_1d_1c = g_n_q_points_1d, g_n_q_points_1d_2c = g_n_q_points_1d, g_n_q_points_1d_3c = g_n_q_points_1d;
 using Number = double;
 
-const bool evaluate_values = true, evaluate_gradients = false, evaluate_hessians = false;
+//const bool evaluate_values = true, evaluate_gradients = false, evaluate_hessians = false;
 
 
+//This should likely fail to compile if unbalanced pair of fe_deg and quad poitns is provided
+template <typename Number, int... Types>
+class FEEvaluationNew; //Do nothing for zero components
+
+
+#if 0
+//This form may be needed if we want to keep that a user may also use FEEvaluationNew
+//to indirectly obtain FEEvaluation, as earlier - with same ansatz in each dir
+template <typename Number, int dim, int n_components, int fe_degree, int n_q_points_1d>
+class FEEvaluationNew<Number, dim, fe_degree, n_q_points_1d> :
+			public FEEvaluation<dim, fe_degree, n_q_points_1d, n_components, Number>
+{
+
+};
+#endif
+
+//When only 1 component is left in recursion
+template <typename Number, int dim, int fe_degree, int n_q_points_1d>
+class FEEvaluationNew<Number, dim, fe_degree, n_q_points_1d> :
+			public FEEvaluation<dim, fe_degree, n_q_points_1d, 1, Number>
+{
+
+};
+
+template <typename Number, int dim, int n_components, int fe_degree, int n_q_points_1d, int... Types>
+class FEEvaluationNew<Number, dim, n_components, fe_degree, n_q_points_1d, Types...>
+		: public FEEvaluationNew<Number, dim, n_components-1, Types...>
+{
+
+};
+
+//Referred from matrix_free/assemble_matrix_01.cc
+void new_eval(const DoFHandler<g_dim> &dof, const MappingQ<g_dim> & mapping, const unsigned int dofs_per_cell,
+				const unsigned int n_q_points, Number *values_dofs_actual[],
+		        Number *values_quad[])
+{
+
+
+}
+
+//Referred from matrix_free/assemble_matrix_01.cc
+void old_eval(const DoFHandler<g_dim> &dof, const MappingQ<g_dim> & mapping, const unsigned int dofs_per_cell,
+				const unsigned int n_q_points, Number *values_dofs_actual[],
+		        Number *values_quad[])
+{
+	using namespace std;
+
+	int c = 0; //Currently for one component..>1 is yet TBD
+
+
+	FEEvaluation<g_dim,g_fe_degree,g_n_q_points_1d>
+	    fe_eval (mapping, dof.get_fe(), QGauss<1>(g_n_q_points_1d),
+	             update_values);
+
+    typename DoFHandler<g_dim>::active_cell_iterator
+	        cell = dof.begin_active(),
+	        endc = dof.end();
+
+    for (; cell!=endc; ++cell)
+	{
+    	fe_eval.reinit(cell);
+
+        for (unsigned int i=0; i<dofs_per_cell; i += VectorizedArray<double>::n_array_elements)
+        {
+            const unsigned int n_items =
+              i+VectorizedArray<double>::n_array_elements > dofs_per_cell ?
+              (dofs_per_cell - i) : VectorizedArray<double>::n_array_elements;
+
+            for (unsigned int j=0; j<dofs_per_cell; ++j)
+              fe_eval.begin_dof_values()[j]  = VectorizedArray<double>();
+
+            for (unsigned int v=0; v<n_items; ++v)
+            {
+            	fe_eval.begin_dof_values()[i+v][v] = values_dofs_actual[c][i+v];
+            }
+        }
+
+        fe_eval.evaluate(true, false);
+
+#if 0
+            for (unsigned int q=0; q<n_q_points; ++q)
+              {
+                fe_eval.submit_value(10.*fe_eval.get_value(q), q);
+                fe_eval.submit_gradient(fe_eval.get_gradient(q), q);
+              }
+            fe_eval.integrate(true, true);
+#endif
+
+    	for (unsigned int q=0; q<n_q_points; q += VectorizedArray<double>::n_array_elements)
+        {
+            const unsigned int n_items =
+              q+VectorizedArray<double>::n_array_elements > n_q_points ?
+              (n_q_points - q) : VectorizedArray<double>::n_array_elements;
+
+            for (unsigned int v=0; v<n_items; ++v)
+            {
+            	values_quad[c][q+v] = fe_eval.get_value(q)[v];
+            }
+
+        }
+	}
+}
+
+
+int main()
+{
+	Triangulation<g_dim> triangulation;
+	FE_Q<g_dim>          fe(g_fe_degree);
+	DoFHandler<g_dim>    dof(triangulation);
+	GridGenerator::hyper_cube (triangulation); //, -1, 1);
+	//triangulation.refine_global (4);
+
+	dof.distribute_dofs(fe);
+
+	MappingQ<g_dim> mapping(g_fe_degree+1);
+
+	QGauss<g_dim>  quadrature_formula(g_n_q_points_1d);
+	const unsigned int   n_q_points    = quadrature_formula.size();
+	const unsigned int   dofs_per_cell = dof.get_fe().dofs_per_cell;
+	const int n_array_elements = VectorizedArray<Number>::n_array_elements;
+
+
+	//in
+	Number nodal_values[dofs_per_cell];
+	Number *values_dofs_actual[g_n_components];
+
+	//out
+	/////For simplicity, we use arrays instead of allocating memory to above output variables
+	Number *values_quad_old_impl[g_n_components],
+							*values_quad_new_impl[g_n_components];
+	Number *gradients_quad_old_impl[g_n_components][g_dim],
+							*gradients_quad_new_impl[g_n_components][g_dim];
+	Number *hessians_quad_old_impl[g_n_components][(g_dim*(g_dim+1))/2],
+							*hessians_quad_new_impl[g_n_components][(g_dim*(g_dim+1))/2];
+	Number out_values_quad_old_impl[g_n_components][n_q_points],
+							out_values_quad_new_impl[g_n_components][n_q_points];
+	Number out_gradients_quad_old_impl[g_n_components][g_dim][n_q_points],
+							out_gradients_quad_new_impl[g_n_components][g_dim][n_q_points];
+	Number out_hessians_quad_old_impl[g_n_components][(g_dim*(g_dim+1))/2][n_q_points],
+							out_hessians_quad_new_impl[g_n_components][(g_dim*(g_dim+1))/2][n_q_points];
+
+    for (unsigned int d=0; d<dofs_per_cell; d++)
+    {
+       	nodal_values[d] = d%n_array_elements + 1;
+    }
+
+	for (int c = 0; c < g_n_components; c++)
+	{
+		//Same nodal values for all the components
+		values_dofs_actual[c] = nodal_values;
+
+		values_quad_old_impl[c] = out_values_quad_old_impl[c];
+		values_quad_new_impl[c] = out_values_quad_new_impl[c];
+
+		for (int d = 0; d < g_dim; d++)
+		{
+			gradients_quad_old_impl[c][d] = out_gradients_quad_old_impl[c][d];
+			gradients_quad_new_impl[c][d] = out_gradients_quad_new_impl[c][d];
+		}
+
+		for (int e = 0; e < (g_dim*(g_dim+1))/2; e++)
+		{
+			hessians_quad_old_impl[c][e] = out_hessians_quad_old_impl[c][e];
+			hessians_quad_new_impl[c][e] = out_hessians_quad_new_impl[c][e];
+		}
+	}
+
+	//take results from old and new implementation
+	old_eval(dof,mapping, dofs_per_cell,n_q_points,values_dofs_actual,values_quad_old_impl);
+
+	new_eval(dof,mapping, dofs_per_cell,n_q_points,values_dofs_actual,values_quad_new_impl);
+
+	//Compare output of both and tell result
+	cout<<endl<<"======= parameters ============"<<endl<<endl;
+
+	cout<<"components = "<<g_n_components<<" ,dim = "<<g_dim<<"  ,fe_degree = "<<g_fe_degree<<"  ,n_q_points_1d = "<<g_n_q_points_1d<<endl;
+	std::cout<<"(dofs_per_cell,n_q_points) = "<<dofs_per_cell<<", "<<n_q_points<<std::endl;
+	cout<<"Length of one VectorArray element = "<<n_array_elements<<endl;
+
+	cout<<endl<<"======= ========== ============"<<endl;
+
+	std::cout<<"Result =============="<<std::endl;
+
+	for (int c = 0; c < g_n_components; c++)
+	{
+		for (int d = 0; d < n_q_points; d++)
+		{
+				bool res = (std::abs(out_values_quad_old_impl[c][d] - out_values_quad_new_impl[c][d]) < 10e-4)?true:false;
+				std::cout<<"(old,new) = ("<<out_values_quad_old_impl[c][d]<<", "<<out_values_quad_new_impl[c][d]<<")   AND  result = "<<res<<std::endl;
+		}
+	}
+
+}
+
+
+#if 0  //v0.2
 template <MatrixFreeFunctions::ElementType type, int dim, int fe_degree,
             int n_q_points_1d, typename Number>
   struct FEEvaluationImplNew
@@ -339,9 +543,12 @@ void old_evaluate(const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> 
 	              evaluate_values, evaluate_gradients, evaluate_hessians);
 }
 
+
+
+
 int main()
 {
-	///////////////////
+	//////////////////
 	//in
 	MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info_old_impl;
 	MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info_new_impl[g_n_components];
@@ -464,4 +671,4 @@ int main()
 
 	delete[] scratch_data;
 }
-
+#endif
