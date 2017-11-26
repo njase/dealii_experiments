@@ -13,6 +13,10 @@
 #include <deal.II/fe/mapping_q.h>
 #include <deal.II/matrix_free/fe_evaluation.h>
 
+
+/////////THIS IS ALL GOING IN WRONG DIRECTION///////////////////
+///////// REDO ////////////////////////////////////
+
 using namespace dealii;
 using namespace dealii::internal;
 using namespace std;
@@ -26,10 +30,18 @@ using Number = double;
 //const bool evaluate_values = true, evaluate_gradients = false, evaluate_hessians = false;
 
 
+#if 0
 //This should likely fail to compile if unbalanced pair of fe_deg and quad poitns is provided
-template <typename Number, int... Types>
-class FEEvaluationNew; //Do nothing for zero components
-
+template <typename Number, int dim, int n_components_, int... Types>
+class FEEvaluationNew : public FEEvaluationAccess<dim,n_components_,Number> //Do nothing for zero components
+{
+	typedef FEEvaluationAccess<dim,n_components_,Number> BaseClass;
+	typedef Number                            number_type;
+	typedef typename BaseClass::value_type    value_type;
+	typedef typename BaseClass::gradient_type gradient_type;
+	static const unsigned int dimension     = dim;
+	static const unsigned int n_components  = n_components_;
+};
 
 #if 0
 //This form may be needed if we want to keep that a user may also use FEEvaluationNew
@@ -40,7 +52,7 @@ class FEEvaluationNew<Number, dim, fe_degree, n_q_points_1d> :
 {
 
 };
-#endif
+
 
 //When only 1 component is left in recursion
 template <typename Number, int dim, int fe_degree, int n_q_points_1d>
@@ -48,16 +60,77 @@ class FEEvaluationNew<Number, dim, fe_degree, n_q_points_1d> :
 			public FEEvaluation<dim, fe_degree, n_q_points_1d, 1, Number>
 {
 
-};
 
-template <typename Number, int dim, int n_components, int fe_degree, int n_q_points_1d, int... Types>
-class FEEvaluationNew<Number, dim, n_components, fe_degree, n_q_points_1d, Types...>
-		: public FEEvaluationNew<Number, dim, n_components-1, Types...>
+};
+#endif
+
+
+//When does the recursion stop? TBD
+//This should always be user instansiated with comp = 0
+template <typename Number, int dim, int n_components_, int comp, int fe_degree, int n_q_points_1d, int... Types>
+class FEEvaluationNew<Number, dim, n_components_, comp, fe_degree, n_q_points_1d, Types...>
+		: public FEEvaluationNew<Number, dim, n_components_, comp+1, Types...>
 {
+	//Now these static variables are
+	static const unsigned int static_n_q_points    = Utilities::fixed_int_power<n_q_points_1d,dim>::value;
+	static const unsigned int tensor_dofs_per_cell = Utilities::fixed_int_power<fe_degree+1,dim>::value;
 
+public:
+
+  FEEvaluationNew (const MatrixFree<dim,Number> &matrix_free,
+                const unsigned int            fe_no   = 0,
+                const unsigned int            quad_no = 0);
+
+  FEEvaluationNew (const Mapping<dim>       &mapping,
+                const FiniteElement<dim> &fe,
+                const Quadrature<1>      &quadrature,
+                const UpdateFlags         update_flags,
+                const unsigned int        first_selected_component = 0);
+
+  FEEvaluationNew (const FiniteElement<dim> &fe,
+                const Quadrature<1>      &quadrature,
+                const UpdateFlags         update_flags,
+                const unsigned int        first_selected_component = 0);
+
+
+  template <int n_components_other>
+  FEEvaluationNew (const FiniteElement<dim> &fe,
+                const FEEvaluationBase<dim,n_components_other,Number> &other,
+                const unsigned int        first_selected_component = 0);
+
+
+  FEEvaluationNew (const FEEvaluation &other);
+
+
+  FEEvaluation &operator= (const FEEvaluation &other);
+
+
+  void evaluate (const bool evaluate_values,
+                 const bool evaluate_gradients,
+                 const bool evaluate_hessians = false);
+
+
+  void integrate (const bool integrate_values,
+                  const bool integrate_gradients);
+
+
+  Point<dim,VectorizedArray<Number> >
+  quadrature_point (const unsigned int q_point) const;
+
+
+  const unsigned int dofs_per_cell;
+
+
+  const unsigned int n_q_points;
+
+private:
+
+  void check_template_arguments(const unsigned int fe_no,
+                                const unsigned int first_selected_component);
 };
 
-//Referred from matrix_free/assemble_matrix_01.cc
+#endif
+
 void new_eval(const DoFHandler<g_dim> &dof, const MappingQ<g_dim> & mapping, const unsigned int dofs_per_cell,
 				const unsigned int n_q_points, Number *values_dofs_actual[],
 		        Number *values_quad[])
