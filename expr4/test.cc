@@ -177,12 +177,12 @@ struct FEEvaluationImplGen
           EvaluatorSelector<type,(base_fe_degree+get_quad_1d<q_policy,base_fe_degree>::n_q_points_1d>4)>::variant;
 
 
-      //Here starts the static loop on n_components - TBD
+      //Here starts the static loop on n_components - Depends on shape_info changes
 
-      //for (c = 0; c < n_components; c++)
-
-      const int c = 0;
-      const int max_fe_degree = get_FEData<FEType, dim, 0 /* any dir */, base_fe_degree, n_components, c>::max_fe_degree;
+      for (int c = 0; c < n_components; c++)
+      {
+      //const int c = 0;
+      const int max_fe_degree = get_FEData<FEType, dim, 0 /* any dir */, base_fe_degree, n_components, n_components-1 /* any component */>::max_fe_degree;
       const int max_n_q_points_1d = get_quad_1d<q_policy,max_fe_degree>::n_q_points_1d;
 
       typedef EvaluatorTensorProduct<variant, dim, max_fe_degree, max_n_q_points_1d,
@@ -386,6 +386,7 @@ struct FEEvaluationImplGen
             values_quad[c][q] += values_dofs[c][shape_info.dofs_per_cell-1];
     }
 #endif
+  }//end of for loop
 }
 
 };
