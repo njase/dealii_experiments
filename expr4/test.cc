@@ -75,79 +75,29 @@ struct get_quad_1d<fe_degree_plus_one, fe_degree>
 };
 
 
-template <typename FEType, int dim, int dir, int base_fe_degree, int n_components, int c>
+template <typename FEType, int dim, int dir, int base_fe_degree, int c>
 struct get_FEData
 {
+	static constexpr int n_components = g_n_components;
 	static constexpr int fe_degree_for_component = 0;
 	static constexpr int max_fe_degree = 0;
+	static constexpr bool isIsotropic = true; //FE_Q in all directions is e.g. isotropic
 };
 
 
-template <int dim, int dir, int base_fe_degree, int n_components, int c>
-struct get_FEData<FE_RaviartThomas<dim>, dim, dir, base_fe_degree, n_components, c>
+template <int dim, int dir, int base_fe_degree, int c>
+struct get_FEData<FE_RaviartThomas<dim>, dim, dir, base_fe_degree, c>
 {
 	static constexpr int fe_degree_for_component = ((dir == c) ? base_fe_degree+1 : base_fe_degree+1);
 	static constexpr int max_fe_degree = base_fe_degree+1;
+	static constexpr bool isIsotropic = false;
 };
+//////////////////////////////////////////////////////////////////////
+
+
 
 
 ////////////////////////////////////////
-#if 0
-template <typename FEType, typename QuadPolicy, int dim, int fe_degree, int n_components, typename Number>
-struct SelectEvaluatorNew
-{
-	void evaluate()
-	{
-		if (1) //FEType is RaviartThomas or something
-		{
-			SelectEvaluatorAsymm<>
-			  	  ::evaluate (*this->data, &this->values_dofs[0], this->values_quad,
-			              this->gradients_quad, this->hessians_quad, this->scratch_data,
-			              evaluate_values, evaluate_gradients, evaluate_hessians);
-		}
-		else
-		{
-			//Old style SelectEvaluator
-			SelectEvaluator<dim, fe_degree, n_q_points_1d, n_components, Number>
-				  ::evaluate (*this->data, &this->values_dofs[0], this->values_quad,
-				              this->gradients_quad, this->hessians_quad, this->scratch_data,
-				              evaluate_values, evaluate_gradients, evaluate_hessians);
-		}
-	}
-};
-
-template <typename FEType, typename QuadPolicy, int dim, int fe_degree, typename Number >
-class FEEvaluationNew : public FEEvaluationAccess<dim,get_n_comp<FEType,dim>::n_components,Number>
-{
-	using BaseClass =  FEEvaluationAccess<dim,get_n_comp<FEType,dim>::n_components,Number>;
-	static const int n_components = BaseClass::n_components;
-
-public:
-	FEEvaluationNew():BaseClass (MatrixFree<dim,Number> (), fe_degree, 1, fe_degree, 10)
-	{}
-
-	void print_data()
-	{
-		cout<<"n_components = "<<BaseClass::n_components<<endl;
-	}
-
-
-	void evaluate (const bool evaluate_values,
-	            const bool evaluate_gradients,
-	            const bool evaluate_hessians)
-	{
-	  Assert (this->dof_values_initialized == true,
-	          internal::ExcAccessToUninitializedField());
-	  Assert(this->matrix_info != nullptr ||
-	         this->mapped_geometry->is_initialized(), ExcNotInitialized());
-
-	  SelectEvaluatorNew<FEType, QuadPolicy, dim, fe_degree, n_components, Number>::evaluate();
-
-
-	}
-};
-
-#endif
 
 //TODO: The shape_info should have info for all components, all directions
 //Currently lets assume that for each component, shape fxns are same in all directions.
@@ -155,9 +105,11 @@ public:
 
 // @base_fe_degree : e.g. RT0 = 0, RT1 = 1
 template <MatrixFreeFunctions::ElementType type, typename FEType, QuadPolicy q_policy,
-		  int n_components, int dim, int base_fe_degree, typename Number>
+		  int dim, int base_fe_degree, typename Number>
 struct FEEvaluationImplGen
 {
+	static constexpr int n_components = get_n_comp<FEType,dim>::n_components;
+
 	//Evaluate for all components
   static
   void evaluate (const MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> (&shape_info)[n_components],
@@ -181,8 +133,7 @@ struct FEEvaluationImplGen
 
       for (int c = 0; c < n_components; c++)
       {
-      //const int c = 0;
-      const int max_fe_degree = get_FEData<FEType, dim, 0 /* any dir */, base_fe_degree, n_components, n_components-1 /* any component */>::max_fe_degree;
+      const int max_fe_degree = get_FEData<FEType, dim, 0 /* any dir */, base_fe_degree, n_components-1 /* any component */>::max_fe_degree;
       const int max_n_q_points_1d = get_quad_1d<q_policy,max_fe_degree>::n_q_points_1d;
 
       typedef EvaluatorTensorProduct<variant, dim, max_fe_degree, max_n_q_points_1d,
@@ -384,16 +335,139 @@ struct FEEvaluationImplGen
         for (unsigned int c=0; c<n_components; ++c)
           for (unsigned int q=0; q<shape_info.n_q_points; ++q)
             values_quad[c][q] += values_dofs[c][shape_info.dofs_per_cell-1];
-    }
 #endif
-  }//end of for loop
-}
+    }//end of for loop
+  }//end of function
 
+}; //end of struct
+
+template <typename FEType, QuadPolicy q_policy, int dim, int base_fe_degree, typename Number>
+struct SelectEvaluatorAnisotropic
+{
+  /**
+   * Chooses an appropriate evaluation strategy for the evaluate function,
+   */
+
+  static void evaluate(const internal::MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number> > &shape_info,
+                       VectorizedArray<Number> *values_dofs_actual[],
+                       VectorizedArray<Number> *values_quad[],
+                       VectorizedArray<Number> *gradients_quad[][dim],
+                       VectorizedArray<Number> *hessians_quad[][(dim*(dim+1))/2],
+                       VectorizedArray<Number> *scratch_data,
+                       const bool               evaluate_values,
+                       const bool               evaluate_gradients,
+                       const bool               evaluate_hessians)
+  {
+	  FEEvaluationImplGen<internal::MatrixFreeFunctions::tensor_general,
+               FEType, q_policy, dim, base_fe_degree, Number>
+               ::evaluate(shape_info, values_dofs_actual, values_quad,
+                          gradients_quad, hessians_quad, scratch_data,
+                          evaluate_values, evaluate_gradients, evaluate_hessians);
+  }
+
+  /**
+   * Chooses an appropriate evaluation strategy for the integrate function, i.e.
+   */
+#if 0 //TBD
+  static void integrate(const internal::MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number> > &shape_info,
+                        VectorizedArray<Number> *values_dofs_actual[],
+                        VectorizedArray<Number> *values_quad[],
+                        VectorizedArray<Number> *gradients_quad[][dim],
+                        VectorizedArray<Number> *scratch_data,
+                        const bool               integrate_values,
+                        const bool               integrate_gradients);
+#endif
+};
+
+
+
+template <typename FEType, QuadPolicy q_policy, int dim, int base_fe_degree, typename Number>
+struct SelectEvaluatorGen
+{
+	static constexpr int n_components = get_n_comp<FEType,dim>::n_components;
+
+	inline
+	void evaluate
+	(const internal::MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number> > &shape_info,
+	 VectorizedArray<Number> *values_dofs_actual[],
+	 VectorizedArray<Number> *values_quad[],
+	 VectorizedArray<Number> *gradients_quad[][dim],
+	 VectorizedArray<Number> *hessians_quad[][(dim*(dim+1))/2],
+	 VectorizedArray<Number> *scratch_data,
+	 const bool               evaluate_values,
+	 const bool               evaluate_gradients,
+	 const bool               evaluate_hessians)
+	{
+		if (get_FEData<FEType, dim, 0 /* any dir */, base_fe_degree, n_components-1 /* any component */>::isIsotropic)
+		{
+			//Old style SelectEvaluator
+			SelectEvaluator<dim, base_fe_degree, get_quad_1d<q_policy,base_fe_degree>::n_q_points_1d,
+							n_components, Number>
+				  ::evaluate (shape_info, values_dofs_actual, values_quad,
+				              gradients_quad, hessians_quad, scratch_data,
+				              evaluate_values, evaluate_gradients, evaluate_hessians);
+		}
+		else//FEType is RaviartThomas or something
+		{
+			SelectEvaluatorAnisotropic<FEType, q_policy, dim, base_fe_degree, Number>
+			  ::evaluate (shape_info, values_dofs_actual, values_quad,
+			              gradients_quad, hessians_quad, scratch_data,
+			              evaluate_values, evaluate_gradients, evaluate_hessians);
+		}
+	}
+};
+
+
+template <typename FEType, QuadPolicy q_policy, int dim, int base_fe_degree, typename Number >
+class FEEvaluationGen : public FEEvaluationAccess<dim, get_n_comp<FEType,dim>::n_components,Number>
+{
+	using BaseClass =  FEEvaluationAccess<dim,get_n_comp<FEType,dim>::n_components,Number>;
+	static const int n_components = BaseClass::n_components;
+
+public:
+
+	void print_data()
+	{
+		cout<<"n_components = "<<BaseClass::n_components<<endl;
+	}
+
+
+	void evaluate (const bool evaluate_values,
+	            const bool evaluate_gradients,
+	            const bool evaluate_hessians)
+	{
+	  Assert (this->dof_values_initialized == true,
+	          internal::ExcAccessToUninitializedField());
+	  Assert(this->matrix_info != nullptr ||
+	         this->mapped_geometry->is_initialized(), ExcNotInitialized());
+
+	  SelectEvaluatorGen<FEType, q_policy, dim, base_fe_degree, Number>::evaluate();
+
+
+	}
 };
 
 int main()
 {
-	//FEEvaluationNew<FE_RaviartThomas<2>, int, 2, 4, double> obj1;
-	//obj1.print_data();
-
+	FEEvaluationGen<FE_RaviartThomas<2>, fe_degree_plus_one, 2, 4, double> obj1;
+	obj1.print_data();
 }
+
+/////Old comments
+///in step 37
+//SAUR: Why cant this definition be in base class itself? Why would derived
+// class want to change the implementation of this function as given here?
+//LaplaceOperator<dim,fe_degree,number>
+//::apply_add (LinearAlgebra::distributed::Vector<number>       &dst,
+//             const LinearAlgebra::distributed::Vector<number> &src) const
+
+///in tensor_product_kernels.h
+//SAUR: TODO: As good practice, these should not be pointer types. These should be
+//the const_iterator of AlignedVector<Number>.
+//This will also mean that the rest of the functions in this file be updated accordingly
+//const Number *shape_values;
+//const Number *shape_gradients;
+//const Number *shape_hessians;
+////
+
+/////
