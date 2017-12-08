@@ -3,12 +3,12 @@
 ##
 
 # Set the name of the project and target:
-if($ENV{STEPVAR} STREQUAL "20")
-	SET(TARGET "step-20")
-elseif($ENV{STEPVAR} STREQUAL "20-1")
+if($ENV{STEPVAR} STREQUAL "20-1")
 	SET(TARGET "step-20-1")
 elseif($ENV{STEPVAR} STREQUAL "20-2")
 	SET(TARGET "step-20-2")
+elseif($ENV{STEPVAR} STREQUAL "20-3")
+	SET(TARGET "step-20-3")
 endif()
 
 # Declare all source files the target consists of. Here, this is only

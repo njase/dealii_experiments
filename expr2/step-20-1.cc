@@ -17,9 +17,6 @@
  * Author: Wolfgang Bangerth, Texas A&M University, 2005, 2006
  * Saurabh Mehta - modified for experimentation
  *   - added log output
- *   - changed RT to Qk-Qk-1
- *   - modified degree from 0 to 2
- *   - modified dimension from 2 to 3
  */
 
 
@@ -32,6 +29,7 @@
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/logstream.h>
 #include <deal.II/base/function.h>
+#include <deal.II/base/timer.h>
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/block_sparse_matrix.h>
@@ -46,8 +44,7 @@
 #include <deal.II/dofs/dof_renumbering.h>
 #include <deal.II/dofs/dof_accessor.h>
 #include <deal.II/dofs/dof_tools.h>
-//#include <deal.II/fe/fe_dgq.h>
-#include <deal.II/fe/fe_q.h>
+#include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/numerics/vector_tools.h>
@@ -66,6 +63,9 @@
 // tensor-valued function. The following include file provides the
 // <code>TensorFunction</code> class that offers such functionality:
 #include <deal.II/base/tensor_function.h>
+
+const int g_dim = 2;
+const int g_degree = 2;
 
 // The last step is as in all previous programs:
 namespace Step20
@@ -299,13 +299,8 @@ namespace Step20
   MixedLaplaceProblem<dim>::MixedLaplaceProblem (const unsigned int degree)
     :
     degree (degree),
-#if 0
     fe (FE_RaviartThomas<dim>(degree), 1,
-            FE_DGQ<dim>(degree), 1),
-#endif
-    fe (FE_Q<dim>(degree+1), dim,
-        FE_Q<dim>(degree), 1),
-
+        FE_DGQ<dim>(degree), 1),
     dof_handler (triangulation)
   {}
 
@@ -322,20 +317,7 @@ namespace Step20
     triangulation.refine_global (3);
 
     dof_handler.distribute_dofs (fe);
-    
 
-    std::vector<unsigned int> block_component (dim+1,0);
-    block_component[dim] = 1;
-    DoFRenumbering::component_wise (dof_handler , block_component);
-    
-    std::vector<types::global_dof_index> dofs_per_block (2);
-    DoFTools::count_dofs_per_block (dof_handler, dofs_per_block , block_component );
-    const unsigned int n_u = dofs_per_block[0],
-                       n_p = dofs_per_block[1];
-    
-
-    
-#if 0   
     // However, then things become different. As mentioned in the
     // introduction, we want to subdivide the matrix into blocks corresponding
     // to the two different kinds of variables, velocity and pressure. To this
@@ -386,8 +368,7 @@ namespace Step20
     DoFTools::count_dofs_per_component (dof_handler, dofs_per_component);
     const unsigned int n_u = dofs_per_component[0],
                        n_p = dofs_per_component[dim];
-#endif
-    
+
     std::cout << "Number of active cells: "
               << triangulation.n_active_cells()
               << std::endl
@@ -903,10 +884,10 @@ namespace Step20
 
     data_out.build_patches (degree+1);
 
-    std::ofstream output ("step-20-1-solution.vtu");
+    std::ofstream output ("step-20-solution.vtu");
     data_out.write_vtu (output);
     
-    std::ofstream logfile ("step-20-1-solution.log");
+    std::ofstream logfile ("step-20-solution.log");
     for (const auto &elem : solution)
     {
     	logfile << elem<<std::endl;    	
@@ -924,13 +905,33 @@ namespace Step20
   template <int dim>
   void MixedLaplaceProblem<dim>::run ()
   {
+	Timer time;
+
+	std::cout<<std::endl<<"Making grid and distributing DoFs, ";
+	time.restart();
     make_grid_and_dofs();
+    std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+
+    std::cout<<std::endl<<"Assembling the System Matrix and RHS, ";
+    time.restart();
     assemble_system ();
-#if 0
+    std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+
+    std::cout<<std::endl<<"Solving the Linear system, ";
+    time.restart();
     solve ();
-#endif
+    std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+
+    std::cout<<std::endl<<"Computing the errors, ";
+    time.restart();
     compute_errors ();
+    std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+
+    std::cout<<std::endl<<"Printing the results, ";
+    time.restart();
     output_results ();
+    std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+
   }
 }
 
@@ -949,7 +950,8 @@ int main ()
       using namespace dealii;
       using namespace Step20;
 
-      MixedLaplaceProblem<3> mixed_laplace_problem(2);
+      //MixedLaplaceProblem<2> mixed_laplace_problem(0);
+      MixedLaplaceProblem<g_dim> mixed_laplace_problem(g_degree);
       mixed_laplace_problem.run ();
     }
   catch (std::exception &exc)

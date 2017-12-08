@@ -1,9 +1,9 @@
-# Experiment 2: Comparing the Matrix based and MatrixFree method for vector valued function
+# Experiment 2: Comparing the Matrix based and MatrixFree method for vector valued function for Mixed Laplace
 
 ## Introduction
-Step-20.cc - Only added extra logs to original step-20 (Matrix based vector valued solver - Mixed laplace eqn)
-Step20-1.cc - Step-20 + replaced RT with FE_Q + changed degree from 0 to 2, changed dim from 2 to 3 (This is like in step-37)
-Step20-2.cc - Step20-1 + modified using MatrixFree (TBD: solver??)
+Step-20-1.cc - Added extra logs to original step-20 (Matrix based vector valued solver - Mixed laplace eqn)
+Step20-2.cc - Step-20-1 + replaced RT with FE_Q + dim and degree are modifiable
+Step20-3.cc - Step20-2 + modified using MatrixFree
 
 ## FE
 Q(k+1),Q(k) elements
