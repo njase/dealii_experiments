@@ -3,3 +3,9 @@ v0.1: Thought that n_components will always be <= coordinate directions, i.e. 3.
 v0.2: Defined a new FEEvaluationImplNew which works only on one component. Correspondingly defined SelectEvaluatorNew. This allows us to call SelectEvaluatorNew separately for each component. This delinks the number of components and their FE evaluation. Tested only for n_components = 1 since >1 components need FESystem. Will take care in next steps.
 
 Next attempt:
+Thoughts:
+- one version in which fe_degree is compile time, n_comp is automatically derived from FE type and quad points is specified as a policy
+
+- one version in which quad points is specified as part of constructor for all n_comp components
+
+- still other by some other design pattern?
