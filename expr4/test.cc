@@ -1,25 +1,51 @@
-#include <deal.II/grid/tria.h>
-#include <deal.II/grid/tria_accessor.h>
-#include <deal.II/grid/tria_iterator.h>
-#include <deal.II/grid/grid_generator.h>
-#include <deal.II/dofs/dof_tools.h>
+//#include <deal.II/grid/tria_accessor.h>
+//#include <deal.II/grid/tria_iterator.h>
 
-#include <deal.II/base/vectorization.h>
+//#include <deal.II/base/vectorization.h>
+//#include <deal.II/matrix_free/matrix_free.h>
+//#include <deal.II/matrix_free/shape_info.h>
+//#include <deal.II/matrix_free/evaluation_kernels.h>
+//#include <deal.II/matrix_free/tensor_product_kernels.h>
+//#include <deal.II/matrix_free/evaluation_selector.h>
+//#include <deal.II/fe/mapping_q.h>
+//#include <deal.II/matrix_free/fe_evaluation.h>
+//#include <deal.II/matrix_free/shape_info.h>
+
+#include "tests.h"
+
+std::ofstream logfile("output");
+
 #include <deal.II/matrix_free/matrix_free.h>
-#include <deal.II/matrix_free/shape_info.h>
-#include <deal.II/matrix_free/evaluation_kernels.h>
-#include <deal.II/matrix_free/tensor_product_kernels.h>
-#include <deal.II/matrix_free/evaluation_selector.h>
-#include <deal.II/fe/mapping_q.h>
 #include <deal.II/matrix_free/fe_evaluation.h>
 
-#include <deal.II/fe/fe_raviart_thomas.h>
+#include <deal.II/base/utilities.h>
+#include <deal.II/lac/block_vector.h>
+#include <deal.II/grid/tria.h>
+#include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/tria_boundary_lib.h>
+#include <deal.II/dofs/dof_tools.h>
+#include <deal.II/dofs/dof_handler.h>
+#include <deal.II/dofs/dof_renumbering.h>
+#include <deal.II/lac/constraint_matrix.h>
+#include <deal.II/lac/block_sparse_matrix.h>
+#include <deal.II/lac/block_sparsity_pattern.h>
+#include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_system.h>
+#include <deal.II/fe/fe_values.h>
+#include <deal.II/numerics/vector_tools.h>
+#include <deal.II/matrix_free/fe_evaluation_gen.h>
+#include <deal.II/fe/fe_raviart_thomas.h>
+
+#include <iostream>
+#include <complex>
+
+#include "create_mesh.h"
 
 
-using namespace dealii;
-using namespace dealii::internal;
 using namespace std;
+
+
+
 
 const int g_dim = 2, g_fe_degree = 1, g_n_q_points_1d = 4, g_n_components = 1;
 //TBD: For n_components > 1, vector-valued problem has to be constructed
@@ -36,41 +62,6 @@ using Number = double;
 //Currently lets assume that for each component, shape fxns are same in all directions.
 // Flexibility needs change in shape_info which is TBD
 
-
-template <typename FEType, QuadPolicy q_policy, int dim, int base_fe_degree, typename Number >
-class FEEvaluationGen : public FEEvaluationAccess<dim, get_n_comp<FEType,dim>::n_components,Number>
-{
-	using BaseClass =  FEEvaluationAccess<dim,get_n_comp<FEType,dim>::n_components,Number>;
-	static const int n_components = BaseClass::n_components;
-
-public:
-
-	void print_data()
-	{
-		cout<<"n_components = "<<BaseClass::n_components<<endl;
-	}
-
-
-	void evaluate (const bool evaluate_values,
-	            const bool evaluate_gradients,
-	            const bool evaluate_hessians)
-	{
-	  Assert (this->dof_values_initialized == true,
-	          internal::ExcAccessToUninitializedField());
-	  Assert(this->matrix_info != nullptr ||
-	         this->mapped_geometry->is_initialized(), ExcNotInitialized());
-
-	  SelectEvaluatorGen<FEType, q_policy, dim, base_fe_degree, Number>::evaluate();
-
-
-	}
-};
-
-int main()
-{
-	FEEvaluationGen<FE_RaviartThomas<2>, fe_degree_plus_one, 2, 4, double> obj1;
-	obj1.print_data();
-}
 
 /////Old comments
 ///in step 37
@@ -115,7 +106,7 @@ public:
   {
     typedef VectorizedArray<Number> vector_t;
     
-    FEEvaluationGen<FE_TaylorHood,fe_degree_plus_one,dim,degree_p,Number> velocity (data,0);
+    FEEvaluationGen<FE_TaylorHood,QuadPolicy::fe_degree_plus_one,dim,degree_p,Number> velocity (data,0);
     //FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
     FEEvaluation<dim,degree_p,degree_p+2,1,  Number> pressure (data, 1);
     
