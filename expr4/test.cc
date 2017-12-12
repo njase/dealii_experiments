@@ -1,16 +1,3 @@
-//#include <deal.II/grid/tria_accessor.h>
-//#include <deal.II/grid/tria_iterator.h>
-
-//#include <deal.II/base/vectorization.h>
-//#include <deal.II/matrix_free/matrix_free.h>
-//#include <deal.II/matrix_free/shape_info.h>
-//#include <deal.II/matrix_free/evaluation_kernels.h>
-//#include <deal.II/matrix_free/tensor_product_kernels.h>
-//#include <deal.II/matrix_free/evaluation_selector.h>
-//#include <deal.II/fe/mapping_q.h>
-//#include <deal.II/matrix_free/fe_evaluation.h>
-//#include <deal.II/matrix_free/shape_info.h>
-
 #include "tests.h"
 
 std::ofstream logfile("output");
@@ -33,58 +20,12 @@ std::ofstream logfile("output");
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/numerics/vector_tools.h>
-#include <deal.II/matrix_free/fe_evaluation_gen.h>
-#include <deal.II/fe/fe_raviart_thomas.h>
+
+#include "create_mesh.h"
 
 #include <iostream>
 #include <complex>
 
-#include "create_mesh.h"
-
-
-using namespace std;
-
-
-
-
-const int g_dim = 2, g_fe_degree = 1, g_n_q_points_1d = 4, g_n_components = 1;
-//TBD: For n_components > 1, vector-valued problem has to be constructed
-const int g_fe_degree_1c = g_fe_degree, g_fe_degree_2c = g_fe_degree, g_fe_degree_3c = g_fe_degree;
-const int g_n_q_points_1d_1c = g_n_q_points_1d, g_n_q_points_1d_2c = g_n_q_points_1d, g_n_q_points_1d_3c = g_n_q_points_1d;
-using Number = double;
-
-//const bool evaluate_values = true, evaluate_gradients = false, evaluate_hessians = false;
-
-
-////////////////////////////////////////
-
-//TODO: The shape_info should have info for all components, all directions
-//Currently lets assume that for each component, shape fxns are same in all directions.
-// Flexibility needs change in shape_info which is TBD
-
-
-/////Old comments
-///in step 37
-//SAUR: Why cant this definition be in base class itself? Why would derived
-// class want to change the implementation of this function as given here?
-//LaplaceOperator<dim,fe_degree,number>
-//::apply_add (LinearAlgebra::distributed::Vector<number>       &dst,
-//             const LinearAlgebra::distributed::Vector<number> &src) const
-
-///in tensor_product_kernels.h
-//SAUR: TODO: As good practice, these should not be pointer types. These should be
-//the const_iterator of AlignedVector<Number>.
-//This will also mean that the rest of the functions in this file be updated accordingly
-//const Number *shape_values;
-//const Number *shape_gradients;
-//const Number *shape_hessians;
-////
-
-/////
-
-//TODO: Future: Once this works independently, next attempt should be to combine 
-//the evaluation of velocities and pressure together even in FEEvaluationGen. Similar 
-//to FEValues does it in general irrespective of FiniteElement of FESystem
 
 
 template <int dim, int degree_p, typename VectorType>
@@ -105,14 +46,13 @@ public:
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
     typedef VectorizedArray<Number> vector_t;
-    
-    FEEvaluationGen<FE_TaylorHood,QuadPolicy::fe_degree_plus_one,dim,degree_p,Number> velocity (data,0);
-    //FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
+    FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
+    //FEEvaluationGen<FE_TaylorHood,QuadPolicy::fe_degree_plus_one,dim,degree_p,Number> velocity (data,0);
     FEEvaluation<dim,degree_p,degree_p+2,1,  Number> pressure (data, 1);
-    
+
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
-    	velocity.reinit (cell);
+        velocity.reinit (cell);
         velocity.read_dof_values (src, 0);
         velocity.evaluate (false,true,false);
         pressure.reinit (cell);
@@ -125,7 +65,6 @@ public:
             vector_t pres = pressure.get_value(q);
             vector_t div = -trace(grad_u);
             pressure.submit_value   (div, q);
-                        
 
             // subtract p * I
             for (unsigned int d=0; d<dim; ++d)
@@ -193,6 +132,9 @@ void test ()
 
   constraints.close ();
 
+  //Note that we did not use block_component here. This means we did not combine
+  //the different velocity components into single block => no. of blocks = no. of components
+
   std::vector<types::global_dof_index> dofs_per_block (dim+1);
   DoFTools::count_dofs_per_component (dof_handler, dofs_per_block);
 
@@ -203,6 +145,8 @@ void test ()
   //          << dof_handler.n_dofs()
   //          << " (" << n_u << '+' << n_p << ')'
   //          << std::endl;
+
+  //std::cout<<"dofs_per_block values = "<<dofs_per_block[0]<<"  "<<dofs_per_block[1]<<"  "<<dofs_per_block[2]<<std::endl;
 
   {
     BlockDynamicSparsityPattern csp (dim+1,dim+1);
@@ -219,13 +163,26 @@ void test ()
 
   system_matrix.reinit (sparsity_pattern);
 
+
   solution.reinit (dim+1);
+  vec1.resize (dim+1);
+  vec2.resize (dim+1);
   for (unsigned int i=0; i<dim+1; ++i)
+  {
     solution.block(i).reinit (dofs_per_block[i]);
+    vec1[i].reinit (dofs_per_block[i]);
+    vec2[i].reinit (dofs_per_block[i]);
+  }
   solution.collect_sizes ();
 
   system_rhs.reinit (solution);
 
+#if 0
+  //SAUR: I wonder why this was not done in earlier loop with solution vector
+  //and why each individual element is not reinit to dofs_per_block[i]
+  //in the end result will be the same because all velocity components have
+  //equal dofs, but logically that would've been more clear
+  //Just moved it
   vec1.resize (dim+1);
   vec2.resize (dim+1);
   vec1[0].reinit (dofs_per_block[0]);
@@ -237,6 +194,7 @@ void test ()
     }
   vec1[dim].reinit (dofs_per_block[dim]);
   vec2[dim].reinit (vec1[dim]);
+#endif
 
   // this is from step-22
   {
@@ -301,8 +259,8 @@ void test ()
   }
 
   // first system_rhs with random numbers
-  for (unsigned int i=0; i<dim+1; ++i)
-    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
+  for (unsigned int i=0; i<dim+1; ++i) //loop on blocks
+    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j) //loop on each element inside block
       {
         const double val = -1. + 2.*random_value<double>();
         system_rhs.block(i)(j) = val;
@@ -325,21 +283,33 @@ void test ()
                     (MatrixFree<dim>::AdditionalData::none));
   }
 
+  //vmult using traditional approach
   system_matrix.vmult (solution, system_rhs);
 
+
+  //vmult using MF approach
   typedef std::vector<Vector<double> > VectorType;
   MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-  mf.vmult (vec2, vec1);
+  mf.vmult (vec2, vec1); // => vec2 = SystemMatrixMF * system_rhs
+
 
   // Verification
-  double error = 0.;
+  double error = 0., tol=1e-10;
+  bool result = true;
   for (unsigned int i=0; i<dim+1; ++i)
     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-      error += std::fabs (solution.block(i)(j)-vec2[i](j));
+    {
+    	error += std::fabs (solution.block(i)(j)-vec2[i](j));
+    	if (error > tol)
+    		result = false;
+    }
   double relative = solution.block(0).l1_norm();
   deallog << "  Verification fe degree " << fe_degree  <<  ": "
           << error/relative << std::endl << std::endl;
+
+  std::cout<<" Final result : "<<result<<std::endl<<std::endl;
 }
+
 
 
 int main ()
