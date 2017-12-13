@@ -114,7 +114,7 @@ void test ()
   DoFHandler<dim>      dof_handler_p (triangulation);
   DoFHandler<dim>      dof_handler (triangulation);
 
-  MatrixFree<dim,double> mf_data;
+  MatrixFree<dim,double> mf_data(false); //use primitive FE
 
   ConstraintMatrix     constraints;
 
@@ -281,6 +281,7 @@ void test ()
     mf_data.reinit (dofs, constraints, quad,
                     typename MatrixFree<dim>::AdditionalData
                     (MatrixFree<dim>::AdditionalData::none));
+    //mf_data.reinit(dofs, constraints, qpolicy, typename MatrixFree<dim>::AdditionalData (MatrixFree<dim>::AdditionalData::none));
   }
 
   //vmult using traditional approach
