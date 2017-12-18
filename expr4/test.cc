@@ -27,7 +27,6 @@ std::ofstream logfile("output");
 #include <complex>
 
 
-
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
 {
@@ -47,8 +46,9 @@ public:
   {
     typedef VectorizedArray<Number> vector_t;
     FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
-    //FEEvaluationGen<FE_TaylorHood,QuadPolicy::fe_degree_plus_one,dim,degree_p,Number> velocity (data,0);
+    //FEEvaluationGen<FE_TaylorHood,degree_p+2,dim,degree_p+1,Number> velocity (data,0);
     FEEvaluation<dim,degree_p,degree_p+2,1,  Number> pressure (data, 1);
+    //FEEvaluationGen<FE_Q,degree_p+2,dim,degree_p,Number> velocity (data,0);
 
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
@@ -115,6 +115,7 @@ void test ()
   DoFHandler<dim>      dof_handler (triangulation);
 
   MatrixFree<dim,double> mf_data(false); //use primitive FE
+  //MatrixFree<dim,double> mf_data(true); //use primitive FE
 
   ConstraintMatrix     constraints;
 
@@ -281,7 +282,7 @@ void test ()
     mf_data.reinit (dofs, constraints, quad,
                     typename MatrixFree<dim>::AdditionalData
                     (MatrixFree<dim>::AdditionalData::none));
-    //mf_data.reinit(dofs, constraints, qpolicy, typename MatrixFree<dim>::AdditionalData (MatrixFree<dim>::AdditionalData::none));
+    //mf_data.reinit(dofs, constraints, quad, typename MatrixFree<dim>::AdditionalData (MatrixFree<dim>::AdditionalData::none));
   }
 
   //vmult using traditional approach
@@ -308,7 +309,7 @@ void test ()
   deallog << "  Verification fe degree " << fe_degree  <<  ": "
           << error/relative << std::endl << std::endl;
 
-  std::cout<<" Final result : "<<result<<std::endl<<std::endl;
+  std::cout<<" Final result : "<<((result==true)?"pass ": "fail ")<<std::endl<<std::endl;
 }
 
 
@@ -323,13 +324,14 @@ int main ()
     deallog << std::endl << "Test with doubles" << std::endl << std::endl;
     deallog.push("2d");
     test<2,1>();
-    //test<2,2>();
-    //test<2,3>();
-    //test<2,4>();
+    test<2,2>();
+    test<2,3>();
+    test<2,4>();
     deallog.pop();
-    //deallog.push("3d");
-    //test<3,1>();
-    //test<3,2>();
-    //deallog.pop();
+    deallog.push("3d");
+    test<3,1>();
+    test<3,2>();
+    deallog.pop();
   }
 }
+
