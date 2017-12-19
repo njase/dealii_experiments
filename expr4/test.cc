@@ -26,7 +26,27 @@ std::ofstream logfile("output");
 #include <iostream>
 #include <complex>
 
+#if 0
 
+#include <deal.II/fe/fe_raviart_thomas.h>
+int main()
+{
+	using namespace dealii;
+	using namespace std;
+
+	const int dim=2,fe_degree=3;
+	typedef double Number;
+
+	FE_RaviartThomas<dim> fe(fe_degree);
+
+	FESystem<dim> fesys(fe,1, FE_Q<dim>(fe_degree+2),1);
+	cout<<"fe.degree = "<<fesys.degree<<endl;
+
+
+}
+#endif
+
+//#if 0
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
 {
@@ -45,10 +65,10 @@ public:
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
     typedef VectorizedArray<Number> vector_t;
-    FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
-    //FEEvaluationGen<FE_TaylorHood,degree_p+2,dim,degree_p+1,Number> velocity (data,0);
-    FEEvaluation<dim,degree_p,degree_p+2,1,  Number> pressure (data, 1);
-    //FEEvaluationGen<FE_Q,degree_p+2,dim,degree_p,Number> velocity (data,0);
+    //FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
+    FEEvaluationGen<FE_TaylorHood,degree_p+2,dim,degree_p+1,Number> velocity (data,0);
+    //FEEvaluation<dim,degree_p,degree_p+2,1,  Number> pressure (data, 1);
+    FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number> pressure (data,1);
 
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
@@ -108,14 +128,16 @@ void test ()
     triangulation.refine_global (3-dim);
 
   FE_Q<dim>            fe_u (fe_degree+1);
+  FESystem<dim>        fe_th_u (fe_u, dim);
   FE_Q<dim>            fe_p (fe_degree);
   FESystem<dim>        fe (fe_u, dim, fe_p, 1);
   DoFHandler<dim>      dof_handler_u (triangulation);
+  DoFHandler<dim>      dof_handler_th_u (triangulation);
   DoFHandler<dim>      dof_handler_p (triangulation);
   DoFHandler<dim>      dof_handler (triangulation);
 
-  MatrixFree<dim,double> mf_data(false); //use primitive FE
-  //MatrixFree<dim,double> mf_data(true); //use primitive FE
+  //MatrixFree<dim,double> mf_data(false); //use primitive FE
+  MatrixFree<dim,double> mf_data(true); //use primitive FE
 
   ConstraintMatrix     constraints;
 
@@ -128,6 +150,7 @@ void test ()
 
   dof_handler.distribute_dofs (fe);
   dof_handler_u.distribute_dofs (fe_u);
+  dof_handler_th_u.distribute_dofs (fe_th_u);
   dof_handler_p.distribute_dofs (fe_p);
   DoFRenumbering::component_wise (dof_handler);
 
@@ -271,7 +294,8 @@ void test ()
   // setup matrix-free structure
   {
     std::vector<const DoFHandler<dim>*> dofs;
-    dofs.push_back(&dof_handler_u);
+    //dofs.push_back(&dof_handler_u);
+    dofs.push_back(&dof_handler_th_u);
     dofs.push_back(&dof_handler_p);
     ConstraintMatrix dummy_constraints;
     dummy_constraints.close();
@@ -324,14 +348,14 @@ int main ()
     deallog << std::endl << "Test with doubles" << std::endl << std::endl;
     deallog.push("2d");
     test<2,1>();
-    test<2,2>();
-    test<2,3>();
-    test<2,4>();
+    //test<2,2>();
+    //test<2,3>();
+    //test<2,4>();
     deallog.pop();
-    deallog.push("3d");
-    test<3,1>();
-    test<3,2>();
-    deallog.pop();
+    //deallog.push("3d");
+    //test<3,1>();
+    //test<3,2>();
+    //deallog.pop();
   }
 }
-
+//#endif
