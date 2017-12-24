@@ -48,7 +48,7 @@ int main()
 }
 #endif
 
-template <int dim, int degree_p, typename VectorType, int n_components_total>
+template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
 {
 public:
@@ -75,7 +75,7 @@ public:
         velocity.read_dof_values (src, 0);
         velocity.evaluate (false,true,false);
         pressure.reinit (cell);
-        pressure.read_dof_values (src, n_components_total-1);
+        pressure.read_dof_values (src, dim);
         pressure.evaluate (true,false,false);
 
         for (unsigned int q=0; q<velocity.n_q_points; ++q)
@@ -95,7 +95,7 @@ public:
         velocity.integrate (false,true);
         velocity.distribute_local_to_global (dst, 0);
         pressure.integrate (true,false);
-        pressure.distribute_local_to_global (dst, n_components_total-1);
+        pressure.distribute_local_to_global (dst, dim);
       }
   }
 
@@ -103,10 +103,10 @@ public:
   void vmult (VectorType &dst,
               const VectorType &src) const
   {
-    AssertDimension (dst.size(), n_components_total);
-    for (unsigned int d=0; d<n_components_total; ++d)
-      dst[d] = 0;
-    data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType,n_components_total>::local_apply,
+    //AssertDimension (dst.size(), dim+1);
+    //for (unsigned int d=0; d<dim+1; ++d)
+    //  dst[d] = 0;
+    data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply,
                     this, dst, src);
   };
 
@@ -116,11 +116,9 @@ private:
 
 
 
-template <int dim, int fe_degree, int n_components=dim>
+template <int dim, int fe_degree>
 void test ()
 {
-  constexpr int n_components_total = n_components + 1;
-
   Triangulation<dim>   triangulation;
   create_mesh (triangulation);
   if (fe_degree == 1)
@@ -130,7 +128,7 @@ void test ()
 
   FE_Q<dim>            fe_u (fe_degree+1);
   FE_Q<dim>            fe_p (fe_degree);
-  FESystem<dim>        fe (fe_u, n_components, fe_p, 1);
+  FESystem<dim>        fe (fe_u, dim, fe_p, 1);
   DoFHandler<dim>      dof_handler_u (triangulation);
   DoFHandler<dim>      dof_handler_p (triangulation);
   DoFHandler<dim>      dof_handler (triangulation);
@@ -144,7 +142,8 @@ void test ()
 
   BlockVector<double> solution;
   BlockVector<double> system_rhs;
-  std::vector<Vector<double> > vec1, vec2;
+  //std::vector<Vector<double> > vec1, vec2;
+  Vector<double> src, dst;
 
   dof_handler.distribute_dofs (fe);
   dof_handler_u.distribute_dofs (fe_u);
@@ -153,7 +152,7 @@ void test ()
 
   constraints.close ();
 
-  std::vector<types::global_dof_index> dofs_per_block (n_components_total);
+  std::vector<types::global_dof_index> dofs_per_block (dim+1);
   DoFTools::count_dofs_per_component (dof_handler, dofs_per_block);
 
   //std::cout << "   Number of active cells: "
@@ -165,10 +164,10 @@ void test ()
   //          << std::endl;
 
   {
-    BlockDynamicSparsityPattern csp (n_components_total,n_components_total);
+    BlockDynamicSparsityPattern csp (dim+1,dim+1);
 
-    for (unsigned int d=0; d<n_components_total; ++d)
-      for (unsigned int e=0; e<n_components_total; ++e)
+    for (unsigned int d=0; d<dim+1; ++d)
+      for (unsigned int e=0; e<dim+1; ++e)
         csp.block(d,e).reinit (dofs_per_block[d], dofs_per_block[e]);
 
     csp.collect_sizes();
@@ -179,25 +178,14 @@ void test ()
 
   system_matrix.reinit (sparsity_pattern);
 
-  solution.reinit (n_components_total);
-  vec1.resize (n_components_total);
-  vec2.resize (n_components_total);
-  for (unsigned int i=0; i<n_components_total; ++i)
-  {
+  solution.reinit (dim+1);
+  for (unsigned int i=0; i<dim+1; ++i)
     solution.block(i).reinit (dofs_per_block[i]);
-    vec1[i].reinit (dofs_per_block[i]);
-    vec2[i].reinit (dofs_per_block[i]);
-  }
   solution.collect_sizes ();
 
   system_rhs.reinit (solution);
 
 #if 0
-  //SAUR: I wonder why this was not done in earlier loop with solution vector
-  //and why each individual element is not reinit to dofs_per_block[i]
-  //in the end result will be the same because all velocity components have
-  //equal dofs, but logically that would've been more clear
-  //Just moved it
   vec1.resize (dim+1);
   vec2.resize (dim+1);
   vec1[0].reinit (dofs_per_block[0]);
@@ -210,6 +198,9 @@ void test ()
   vec1[dim].reinit (dofs_per_block[dim]);
   vec2[dim].reinit (vec1[dim]);
 #endif
+
+  src.reinit(dof_handler.n_dofs());
+  dst.reinit(dof_handler.n_dofs());
 
   // this is from step-22
   {
@@ -273,13 +264,16 @@ void test ()
       }
   }
 
+  int k = 0;
   // first system_rhs with random numbers
-  for (unsigned int i=0; i<n_components_total; ++i)
+  for (unsigned int i=0; i<dim+1; ++i)
     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
       {
         const double val = -1. + 2.*random_value<double>();
         system_rhs.block(i)(j) = val;
-        vec1[i](j) = val;
+        //vec1[i](j) = val;
+        src[k] = val;
+        k++;
       }
 
   // setup matrix-free structure
@@ -300,18 +294,32 @@ void test ()
 
   system_matrix.vmult (solution, system_rhs);
 
-  typedef std::vector<Vector<double> > VectorType;
-  MatrixFreeTest<dim,fe_degree,VectorType,n_components_total> mf (mf_data);
-  mf.vmult (vec2, vec1);
+  //typedef std::vector<Vector<double> > VectorType;
+  typedef Vector<double> VectorType;
+  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
+  //mf.vmult (vec2, vec1);
+  mf.vmult (dst, src);
 
+#if 0
   // Verification
+  double error = 0.;
+  for (unsigned int i=0; i<dim+1; ++i)
+    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
+      error += std::fabs (solution.block(i)(j)-vec2[i](j));
+  double relative = solution.block(0).l1_norm();
+  deallog << "  Verification fe degree " << fe_degree  <<  ": "
+          << error/relative << std::endl << std::endl;
+#endif
+
   double error = 0., tol=1e-10;
+  k = 0;
+
   bool result = true;
-  for (unsigned int i=0; i<n_components_total; ++i)
+  for (unsigned int i=0; i<dim+1; ++i)
     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
     {
-    	deallog << solution.block(i)(j) << "    " << vec2[i](j) << std::endl;
-    	error += std::fabs (solution.block(i)(j)-vec2[i](j));
+    	error += std::fabs (solution.block(i)(j)-dst[k]);
+    	k++;
     	if (error > tol)
     		result = false;
     }
