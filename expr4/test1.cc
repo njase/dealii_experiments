@@ -27,32 +27,12 @@ std::ofstream logfile("output");
 #include <complex>
 #include <vector>
 
-
-#if 0
-
-#include <deal.II/fe/fe_raviart_thomas.h>
-int main()
-{
-	using namespace dealii;
-	using namespace std;
-
-	const int dim=2,fe_degree=3;
-	typedef double Number;
-
-	FE_RaviartThomas<dim> fe(fe_degree);
-
-	FESystem<dim> fesys(fe,1, FE_Q<dim>(fe_degree+2),1);
-	cout<<"fe.degree = "<<fesys.degree<<endl;
+//This code is to get reference results if 2 blocks are used vs when dim+1 blocks are
+//used. This is based on matrix_vector_stokes.cc and reference results are taken only
+//for system matrix with sparse matrix vector product
 
 
-}
-#endif
-
-//Without this flag, now the code will not work since vector valued evaluation using
-//scalar valued FE expects that the respective dofs are component wise distributed
-//in src vector. Whereas, here I've changed it to just 2
-
-#define GEN_IMPL
+#define TWOBLOCKS
 
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
@@ -72,13 +52,8 @@ public:
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
     typedef VectorizedArray<Number> vector_t;
-#ifdef GEN_IMPL
-        FEEvaluationGen<FE_TaylorHood,degree_p+2,dim,degree_p+1,Number> velocity (data,0);
-        FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number> pressure (data,1);
-#else
     FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
     FEEvaluation<dim,degree_p,degree_p+2,1,  Number> pressure (data, 1);
-#endif
 
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
@@ -86,11 +61,7 @@ public:
         velocity.read_dof_values (src, 0);
         velocity.evaluate (false,true,false);
         pressure.reinit (cell);
-#ifdef GEN_IMPL
-        pressure.read_dof_values (src, 1);
-#else
-        pressure.read_dof_values (src, 1);
-#endif
+        pressure.read_dof_values (src, dim);
         pressure.evaluate (true,false,false);
 
         for (unsigned int q=0; q<velocity.n_q_points; ++q)
@@ -110,11 +81,7 @@ public:
         velocity.integrate (false,true);
         velocity.distribute_local_to_global (dst, 0);
         pressure.integrate (true,false);
-#ifdef GEN_IMPL
-        pressure.distribute_local_to_global (dst, 1);
-#else
-        pressure.distribute_local_to_global (dst, 1);
-#endif
+        pressure.distribute_local_to_global (dst, dim);
       }
   }
 
@@ -122,11 +89,9 @@ public:
   void vmult (VectorType &dst,
               const VectorType &src) const
   {
-#ifndef GEN_IMPL
-    AssertDimension (dst.size(), 2);
-    for (unsigned int d=0; d<2; ++d)
+    AssertDimension (dst.size(), dim+1);
+    for (unsigned int d=0; d<dim+1; ++d)
       dst[d] = 0;
-#endif
     data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply,
                     this, dst, src);
   };
@@ -150,20 +115,11 @@ void test ()
   FE_Q<dim>            fe_u (fe_degree+1);
   FE_Q<dim>            fe_p (fe_degree);
   FESystem<dim>        fe (fe_u, dim, fe_p, 1);
-#ifdef GEN_IMPL
-  DoFHandler<dim>      dof_handler_gen_u (triangulation);
-#else
   DoFHandler<dim>      dof_handler_u (triangulation);
-#endif
   DoFHandler<dim>      dof_handler_p (triangulation);
   DoFHandler<dim>      dof_handler (triangulation);
 
-#ifdef GEN_IMPL
-  FESystem<dim>        fe_gen_u (fe_u, dim);
-  MatrixFree<dim,double> mf_data(true);
-#else
-  MatrixFree<dim,double> mf_data(false);
-#endif
+  MatrixFree<dim,double> mf_data;
 
   ConstraintMatrix     constraints;
 
@@ -174,28 +130,34 @@ void test ()
   BlockVector<double> system_rhs;
   std::vector<Vector<double> > vec1, vec2;
 
-#ifdef GEN_IMPL
-  std::vector<Vector<double> > src, dst;
-#endif
-
   dof_handler.distribute_dofs (fe);
-#ifdef GEN_IMPL
-  dof_handler_gen_u.distribute_dofs (fe_gen_u);
-#else
   dof_handler_u.distribute_dofs (fe_u);
-#endif
   dof_handler_p.distribute_dofs (fe_p);
 
+#ifdef  TWOBLOCKS
   std::vector<unsigned int> block_component (dim+1,0); //dim+1 components in total
   block_component[dim] = 1; //For pressure = last component
 
   DoFRenumbering::component_wise (dof_handler,block_component);
 
-
   constraints.close ();
 
   std::vector<types::global_dof_index> dofs_per_block (2);
   DoFTools::count_dofs_per_block (dof_handler, dofs_per_block, block_component);
+#else
+  DoFRenumbering::component_wise (dof_handler);
+
+  constraints.close ();
+
+  std::vector<types::global_dof_index> dofs_per_block (dim+1);
+  DoFTools::count_dofs_per_component (dof_handler, dofs_per_block);
+#endif
+
+  int n_blocks = dim+1;
+#ifdef  TWOBLOCKS
+  n_blocks = 2;
+#endif
+
 
   //std::cout << "   Number of active cells: "
   //          << triangulation.n_active_cells()
@@ -206,10 +168,10 @@ void test ()
   //          << std::endl;
 
   {
-    BlockDynamicSparsityPattern csp (2,2);
+    BlockDynamicSparsityPattern csp (n_blocks,n_blocks);
 
-    for (unsigned int d=0; d<2; ++d)
-      for (unsigned int e=0; e<2; ++e)
+    for (unsigned int d=0; d<n_blocks; ++d)
+      for (unsigned int e=0; e<n_blocks; ++e)
         csp.block(d,e).reinit (dofs_per_block[d], dofs_per_block[e]);
 
     csp.collect_sizes();
@@ -220,33 +182,24 @@ void test ()
 
   system_matrix.reinit (sparsity_pattern);
 
-  solution.reinit (2);
-  vec1.resize (2);
-  vec2.resize (2);
-  for (unsigned int i=0; i<2; ++i)
-  {
+  solution.reinit (n_blocks);
+  for (unsigned int i=0; i<n_blocks; ++i)
     solution.block(i).reinit (dofs_per_block[i]);
-    vec1[i].reinit (dofs_per_block[i]);
-    vec2[i].reinit (dofs_per_block[i]);
-  }
   solution.collect_sizes ();
 
   system_rhs.reinit (solution);
 
-#ifdef GEN_IMPL
-  //velocity and pressure
-  src.resize(2);
-  dst.resize(2);
-
-  //all components of velocity together
-  src[0].reinit(dof_handler_gen_u.n_dofs());
-  src[1].reinit(dof_handler_p.n_dofs());
-
-  dst[0].reinit(dof_handler_gen_u.n_dofs());
-  dst[1].reinit(dof_handler_p.n_dofs());
-
-
-#endif
+  vec1.resize (n_blocks);
+  vec2.resize (n_blocks);
+  vec1[0].reinit (dofs_per_block[0]);
+  vec2[0].reinit (vec1[0]);
+  for (unsigned int i=1; i<n_blocks-1; ++i)
+    {
+      vec1[i].reinit (vec1[0]);
+      vec2[i].reinit (vec1[0]);
+    }
+  vec1[n_blocks-1].reinit (dofs_per_block[n_blocks-1]);
+  vec2[n_blocks-1].reinit (vec1[n_blocks-1]);
 
   // this is from step-22
   {
@@ -311,25 +264,19 @@ void test ()
   }
 
   // first system_rhs with random numbers
-  for (unsigned int i=0; i<2; ++i)
+  for (unsigned int i=0; i<n_blocks; ++i)
     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
       {
         const double val = -1. + 2.*random_value<double>();
         system_rhs.block(i)(j) = val;
         vec1[i](j) = val;
-#ifdef GEN_IMPL
-        src[i](j) = val;
-#endif
       }
 
+#ifndef TWOBLOCKS
   // setup matrix-free structure
   {
     std::vector<const DoFHandler<dim>*> dofs;
-#ifdef GEN_IMPL
-    dofs.push_back(&dof_handler_gen_u);
-#else
     dofs.push_back(&dof_handler_u);
-#endif
     dofs.push_back(&dof_handler_p);
     ConstraintMatrix dummy_constraints;
     dummy_constraints.close();
@@ -341,41 +288,28 @@ void test ()
                     typename MatrixFree<dim>::AdditionalData
                     (MatrixFree<dim>::AdditionalData::none));
   }
-
+#endif
   system_matrix.vmult (solution, system_rhs);
 
+#ifndef TWOBLOCKS
   typedef std::vector<Vector<double> > VectorType;
-
-
   MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-#ifdef GEN_IMPL
-  mf.vmult (dst, src);
-#else
   mf.vmult (vec2, vec1);
 #endif
 
-
-  double error = 0., tol=1e-10;
-
-  bool result = true;
-  for (unsigned int i=0; i<2; ++i)
+  // Verification
+  double error = 0.;
+  for (unsigned int i=0; i<n_blocks; ++i)
     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
     {
-#ifdef GEN_IMPL
-    	deallog << solution.block(i)(j) << "  "<<dst[i](j) << std::endl;
-    	error += std::fabs (solution.block(i)(j)-dst[i](j));
-#else
-    	deallog << solution.block(i)(j) << "  "<<vec2[i](j) << std::endl;
-    	error += std::fabs (solution.block(i)(j)-vec2[i](j));
+      deallog << solution.block(i)(j)<<std::endl;
+#ifndef TWOBLOCKS
+      error += std::fabs (solution.block(i)(j)-vec2[i](j));
 #endif
-    	if (error > tol)
-    		result = false;
     }
   double relative = solution.block(0).l1_norm();
   deallog << "  Verification fe degree " << fe_degree  <<  ": "
           << error/relative << std::endl << std::endl;
-
-  std::cout<<" Final result : "<<((result==true)?"pass ": "fail ")<<std::endl<<std::endl;
 }
 
 
