@@ -48,6 +48,8 @@ int main()
 }
 #endif
 
+#define GEN_IMPL
+
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
 {
@@ -66,8 +68,13 @@ public:
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
     typedef VectorizedArray<Number> vector_t;
+#ifdef GEN_IMPL
+        FEEvaluationGen<FE_TaylorHood,degree_p+2,dim,degree_p+1,Number> velocity (data,0);
+        FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number> pressure (data,1);
+#else
     FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
     FEEvaluation<dim,degree_p,degree_p+2,1,  Number> pressure (data, 1);
+#endif
 
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
@@ -75,7 +82,11 @@ public:
         velocity.read_dof_values (src, 0);
         velocity.evaluate (false,true,false);
         pressure.reinit (cell);
+#ifdef GEN_IMPL
+        pressure.read_dof_values (src, 1);
+#else
         pressure.read_dof_values (src, dim);
+#endif
         pressure.evaluate (true,false,false);
 
         for (unsigned int q=0; q<velocity.n_q_points; ++q)
@@ -95,7 +106,11 @@ public:
         velocity.integrate (false,true);
         velocity.distribute_local_to_global (dst, 0);
         pressure.integrate (true,false);
+#ifdef GEN_IMPL
+        pressure.distribute_local_to_global (dst, 1);
+#else
         pressure.distribute_local_to_global (dst, dim);
+#endif
       }
   }
 
@@ -103,9 +118,11 @@ public:
   void vmult (VectorType &dst,
               const VectorType &src) const
   {
-    //AssertDimension (dst.size(), dim+1);
-    //for (unsigned int d=0; d<dim+1; ++d)
-    //  dst[d] = 0;
+#ifndef GEN_IMPL
+    AssertDimension (dst.size(), dim+1);
+    for (unsigned int d=0; d<dim+1; ++d)
+      dst[d] = 0;
+#endif
     data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply,
                     this, dst, src);
   };
@@ -129,11 +146,20 @@ void test ()
   FE_Q<dim>            fe_u (fe_degree+1);
   FE_Q<dim>            fe_p (fe_degree);
   FESystem<dim>        fe (fe_u, dim, fe_p, 1);
+#ifdef GEN_IMPL
+  DoFHandler<dim>      dof_handler_gen_u (triangulation);
+#else
   DoFHandler<dim>      dof_handler_u (triangulation);
+#endif
   DoFHandler<dim>      dof_handler_p (triangulation);
   DoFHandler<dim>      dof_handler (triangulation);
 
-  MatrixFree<dim,double> mf_data;
+#ifdef GEN_IMPL
+  FESystem<dim>        fe_gen_u (fe_u, dim);
+  MatrixFree<dim,double> mf_data(true);
+#else
+  MatrixFree<dim,double> mf_data(false);
+#endif
 
   ConstraintMatrix     constraints;
 
@@ -142,12 +168,22 @@ void test ()
 
   BlockVector<double> solution;
   BlockVector<double> system_rhs;
-  //std::vector<Vector<double> > vec1, vec2;
-  Vector<double> src, dst;
+  std::vector<Vector<double> > vec1, vec2;
+
+#ifdef GEN_IMPL
+  //Vector<double> src, dst;
+  std::vector<Vector<double> > src, dst;
+#endif
 
   dof_handler.distribute_dofs (fe);
+#ifdef GEN_IMPL
+  dof_handler_gen_u.distribute_dofs (fe_gen_u);
+#else
   dof_handler_u.distribute_dofs (fe_u);
+#endif
   dof_handler_p.distribute_dofs (fe_p);
+
+
   DoFRenumbering::component_wise (dof_handler);
 
   constraints.close ();
@@ -185,7 +221,7 @@ void test ()
 
   system_rhs.reinit (solution);
 
-#if 0
+
   vec1.resize (dim+1);
   vec2.resize (dim+1);
   vec1[0].reinit (dofs_per_block[0]);
@@ -197,10 +233,24 @@ void test ()
     }
   vec1[dim].reinit (dofs_per_block[dim]);
   vec2[dim].reinit (vec1[dim]);
-#endif
 
-  src.reinit(dof_handler.n_dofs());
-  dst.reinit(dof_handler.n_dofs());
+#ifdef GEN_IMPL
+  //src.reinit(dof_handler.n_dofs());
+  //dst.reinit(dof_handler.n_dofs());
+
+  //velocity and pressure
+  src.resize(2);
+  dst.resize(2);
+
+  //all components of velocity together
+  src[0].reinit(dof_handler_gen_u.n_dofs());
+  src[1].reinit(dof_handler_p.n_dofs());
+
+  dst[0].reinit(dof_handler_gen_u.n_dofs());
+  dst[1].reinit(dof_handler_p.n_dofs());
+
+
+#endif
 
   // this is from step-22
   {
@@ -271,15 +321,21 @@ void test ()
       {
         const double val = -1. + 2.*random_value<double>();
         system_rhs.block(i)(j) = val;
-        //vec1[i](j) = val;
-        src[k] = val;
+        vec1[i](j) = val;
+#ifdef GEN_IMPL
+        //src[k] = val; --> TBD once compile issues are resolved
+#endif
         k++;
       }
 
   // setup matrix-free structure
   {
     std::vector<const DoFHandler<dim>*> dofs;
+#ifdef GEN_IMPL
+    dofs.push_back(&dof_handler_gen_u);
+#else
     dofs.push_back(&dof_handler_u);
+#endif
     dofs.push_back(&dof_handler_p);
     ConstraintMatrix dummy_constraints;
     dummy_constraints.close();
@@ -294,22 +350,19 @@ void test ()
 
   system_matrix.vmult (solution, system_rhs);
 
-  //typedef std::vector<Vector<double> > VectorType;
-  typedef Vector<double> VectorType;
-  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-  //mf.vmult (vec2, vec1);
-  mf.vmult (dst, src);
+//#ifdef GEN_IMPL
+//  typedef Vector<double> VectorType;
+//#else
+  typedef std::vector<Vector<double> > VectorType;
+//#endif
 
-#if 0
-  // Verification
-  double error = 0.;
-  for (unsigned int i=0; i<dim+1; ++i)
-    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-      error += std::fabs (solution.block(i)(j)-vec2[i](j));
-  double relative = solution.block(0).l1_norm();
-  deallog << "  Verification fe degree " << fe_degree  <<  ": "
-          << error/relative << std::endl << std::endl;
+  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
+#ifdef GEN_IMPL
+  mf.vmult (dst, src);
+#else
+  mf.vmult (vec2, vec1);
 #endif
+
 
   double error = 0., tol=1e-10;
   k = 0;
@@ -318,7 +371,11 @@ void test ()
   for (unsigned int i=0; i<dim+1; ++i)
     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
     {
-    	error += std::fabs (solution.block(i)(j)-dst[k]);
+#ifdef GEN_IMPL
+    	//error += std::fabs (solution.block(i)(j)-dst[k]); -->TBD
+#else
+    	error += std::fabs (solution.block(i)(j)-vec2[i](j));
+#endif
     	k++;
     	if (error > tol)
     		result = false;
@@ -340,16 +397,16 @@ int main ()
 
   {
     deallog << std::endl << "Test with doubles" << std::endl << std::endl;
-    //deallog.push("2d");
-    //test<2,1>();
+    deallog.push("2d");
+    test<2,1>();
     //test<2,2>();
     //test<2,3>();
     //test<2,4>();
-    //deallog.pop();
-    deallog.push("3d");
-    test<3,1>();
-    //test<3,2>();
     deallog.pop();
+    //deallog.push("3d");
+    //test<3,1>();
+    //test<3,2>();
+    //deallog.pop();
   }
 }
 
