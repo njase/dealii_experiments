@@ -27,6 +27,8 @@ std::ofstream logfile("output");
 #include <complex>
 #include <vector>
 
+//This is an attempt to compare results of vmulu operation of FEEvaluationGen with FEEvaluation on vector vlaued FE_Q
+//Currently the results dont match so doing more basic tests in other files
 
 #if 0
 

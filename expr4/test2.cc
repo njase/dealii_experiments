@@ -8,6 +8,7 @@
 #include <deal.II/grid/tria.h>
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/tria_boundary_lib.h>
+#include <deal.II/dofs/dof_accessor.h>
 #include <deal.II/dofs/dof_tools.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_renumbering.h>
@@ -31,127 +32,96 @@
 // and FEEvaluationGen+MatrixFree(non_primitive)
 
 
-template <int dim, int degree_p, typename VectorType>
+template <int dim, int degree_p, typename Number, typename VectorType>
 class MatrixFreeTest
 {
 
+    using FEEvalGen_V =  FEEvaluationGen<FE_TaylorHood,degree_p+2,dim,degree_p+1,Number>;
+    using FEEvalGen_P = FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number>;
+
+    using FEEval_V = FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number>;
+    using FEEval_P = FEEvaluation<dim,degree_p,degree_p+2,1,  Number>;
+
 public:
   typedef typename DoFHandler<dim>::active_cell_iterator CellIterator;
-  typedef double Number;
 
-  MatrixFreeTest(const MatrixFree<dim,Number> &data_in, const MatrixFree<dim,Number> &data_gen_in):
-    data (data_in), data_gen(data_gen_in)
+  MatrixFreeTest(const MatrixFree<dim,Number> &data_in): data (data_in), n_q_points_1d(degree_p+2)
   {
+	  deallog<<"Is MatrixFree using primitive element? = "<<data.is_primitive()<<std::endl;
+	  deallog<<"n_array_elements on this machine = "<<n_array_elements<<std::endl;
+	  deallog<<"n_q_points_1d = "<<n_q_points_1d<<std::endl;
+	  deallog<<"No of (physical cells, macro cells) = ("<<data.n_physical_cells()<<", "<<data.n_macro_cells()<<")"<<std::endl;
+
   };
 
-
+  template<typename TypeV, typename TypeP>
   void
   local_apply (const MatrixFree<dim,Number> &data,
                VectorType          &dst,
                const VectorType    &src,
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
-	  std::ofstream logfile("output_old");
 
-	  deallog.attach(logfile);
+	TypeV velocity (data, 0);
+	TypeP pressure (data, 1);
 
-	  deallog << std::setprecision (3);
+	const unsigned int v_dofs_per_cell = (data.get_dof_handler(0).get_fe()).n_dofs_per_cell();
+	const unsigned int p_dofs_per_cell = (data.get_dof_handler(1).get_fe()).n_dofs_per_cell();
 
-    typedef VectorizedArray<Number> vector_t;
+	deallog<<"dofs_per_cell(Pressure, velocity) = ("<<p_dofs_per_cell<<", "<<v_dofs_per_cell<<")"<<std::endl;
 
-	VectorizedArray<Number> * val, *val_gen;
+	VectorizedArray<Number> *p_values;
 
-    FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
-    FEEvaluation<dim,degree_p,degree_p+2,1,  Number> pressure (data, 1);
+	int p_vectorized_elements = (p_dofs_per_cell*n_q_points_1d)/n_array_elements;
 
+	std::cout<<"p elements in one iteration = "<<(p_dofs_per_cell*n_q_points_1d)<<std::endl;
+
+	int k = 1;
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
          	pressure.reinit(cell);
             pressure.read_dof_values (src, 1);
             pressure.evaluate (true,false,false);
 
-            //break;
+            p_values = pressure.begin_values();
+            for (int i =0; i<p_vectorized_elements; i++) //loop over all elements in this cell
+            {
+            	for (unsigned int j=0; j<n_array_elements; j++)
+            	{
+            		deallog<<p_values[i][j] << std::endl;
+            	}
+            }
+
+            if (k == 1)
+            {
+            	//break;
+            }
+            else
+            	k++;
       }
-
-    val = pressure.begin_values();
-
-    int n_array_elements = VectorizedArray<Number>::n_array_elements;
-    int max_i = src[1].size()/n_array_elements;
-
-    deallog<<"Values for primitive = "<<data.is_primitive()<<std::endl;
-    deallog<<"n_array_elements = "<<n_array_elements<<std::endl;
-
-    for (int i =0; i<max_i; i++)
-    {
-    	for (unsigned int j=0; j<n_array_elements; j++)
-    	{
-    		deallog<<val[i][j] << std::endl;
-    	}
-    }
-
-    deallog.detach();
-
-  }
-
-  void
-  local_apply_gen (const MatrixFree<dim,Number> &data,
-               VectorType          &dst,
-               const VectorType    &src,
-               const std::pair<unsigned int,unsigned int> &cell_range) const
-  {
-	  std::ofstream logfile("output_new");
-
-	  deallog.attach(logfile);
-
-	  deallog << std::setprecision (3);
-
-    typedef VectorizedArray<Number> vector_t;
-
-	VectorizedArray<Number> * val, *val_gen;
-
-    FEEvaluationGen<FE_TaylorHood,degree_p+2,dim,degree_p+1,Number> velocity (data,0);
-    FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number> pressure (data,1);
-
-    for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
-      {
-         	pressure.reinit(cell);
-            pressure.read_dof_values (src, 1);
-            pressure.evaluate (true,false,false);
-      }
-
-    val = pressure.begin_values();
-
-    int n_array_elements = VectorizedArray<Number>::n_array_elements;
-    int max_i = src[1].size()/n_array_elements;
-
-    deallog<<"Values for primitive = "<<data.is_primitive()<<std::endl;
-    deallog<<"n_array_elements = "<<n_array_elements<<std::endl;
-
-    for (int i =0; i<max_i; i++)
-    {
-    	for (unsigned int j=0; j<n_array_elements; j++)
-    	{
-    		deallog<<val[i][j] << std::endl;
-    	}
-    }
-
-    deallog.detach();
   }
 
 
   void vmult (VectorType &dst,
               const VectorType &src) const
   {
-    data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply,
+    if (data.is_primitive())
+    {
+    	data.cell_loop (&MatrixFreeTest<dim,degree_p,Number,VectorType>::local_apply<FEEvalGen_V,FEEvalGen_P>,
                     this, dst, src);
+    }
+    else
+    {
+    	data.cell_loop (&MatrixFreeTest<dim,degree_p,Number,VectorType>::local_apply<FEEval_V,FEEval_P>,
+                    this, dst, src);
+    }
 
-    data_gen.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply_gen,
-                   this, dst, src);
   };
 
 private:
   const MatrixFree<dim,Number> &data;
-  const MatrixFree<dim,Number> &data_gen;
+  const int n_q_points_1d;
+  const int n_array_elements = VectorizedArray<Number>::n_array_elements;
 };
 
 
@@ -167,73 +137,114 @@ void test ()
   else
     triangulation.refine_global (3-dim);
 
-  FE_Q<dim>            fe_u (fe_degree+1);
-  FESystem<dim>        fe_gen_u (fe_u, dim);
+  std::cout<<"No of active cells from triangulation = "<<triangulation.n_active_cells()<<std::endl;
 
+  //Setup MatrixFree part
+
+   //Common
   FE_Q<dim>            fe_p (fe_degree);
-
-  DoFHandler<dim>      dof_handler_gen_u (triangulation);
-  DoFHandler<dim>      dof_handler_u (triangulation);
-
   DoFHandler<dim>      dof_handler_p (triangulation);
-
-  FESystem<dim>        fe (fe_u, dim, fe_p, 1);
-  DoFHandler<dim>      dof_handler(triangulation);
-
-
-  MatrixFree<dim,Number> mf_data(false);
-  MatrixFree<dim,Number> mf_data_gen(true);
-
-  dof_handler_gen_u.distribute_dofs (fe_gen_u);
-  dof_handler_u.distribute_dofs (fe_u);
   dof_handler_p.distribute_dofs (fe_p);
 
-  dof_handler.distribute_dofs(fe);
+  FE_Q<dim>            fe_u (fe_degree+1);
+
+  FESystem<dim>        fe (fe_u, dim);
+  DoFHandler<dim>      dof_handler (triangulation);
+  dof_handler.distribute_dofs (fe);
+
+  std::vector<const DoFHandler<dim>*> dofs_vector;
+  dofs_vector.push_back(&dof_handler);
+  dofs_vector.push_back(&dof_handler_p);
+
+  std::cout<<"Initially dofs_per_cell(Pressure, velocity) = ("<<(dof_handler_p.get_fe()).n_dofs_per_cell()<<", "<<(dof_handler.get_fe()).n_dofs_per_cell()<<")"<<std::endl;
+
+  ConstraintMatrix dummy_constraints;
+  dummy_constraints.close();
+  std::vector<const ConstraintMatrix *> constraints;
+  constraints.push_back (&dummy_constraints);
+  constraints.push_back (&dummy_constraints);
+  QGauss<1> quad(fe_degree+2);
 
 
-  // setup matrix-free structure
+#if 0
+  //For FEEvaluation - using scalar valued FE
+  DoFHandler<dim>      dof_handler_u (triangulation);
+  dof_handler_u.distribute_dofs (fe_u);
 
-    std::vector<const DoFHandler<dim>*> dofs, dofs_gen;
+  MatrixFree<dim,Number> mf_data_sca(false);
+  std::vector<const DoFHandler<dim>*> dofs_scalar;
+  dofs_scalar.push_back(&dof_handler_u);
+  dofs_scalar.push_back(&dof_handler_p);
+  mf_data_sca.reinit (dofs_scalar, constraints, quad,
+                  typename MatrixFree<dim>::AdditionalData
+                  (MatrixFree<dim>::AdditionalData::none));
+#endif
 
-    dofs_gen.push_back(&dof_handler_gen_u);
-    dofs_gen.push_back(&dof_handler_p);
-
-    dofs.push_back(&dof_handler_u);
-    dofs.push_back(&dof_handler_p);
-
-    ConstraintMatrix dummy_constraints;
-    dummy_constraints.close();
-    std::vector<const ConstraintMatrix *> constraints;
-    constraints.push_back (&dummy_constraints);
-    constraints.push_back (&dummy_constraints);
-    QGauss<1> quad(fe_degree+2);
-
-    mf_data.reinit (dofs, constraints, quad,
-                    typename MatrixFree<dim>::AdditionalData
-                    (MatrixFree<dim>::AdditionalData::none));
-
-
-    mf_data_gen.reinit (dofs_gen, constraints, quad,
-                        typename MatrixFree<dim>::AdditionalData
-                        (MatrixFree<dim>::AdditionalData::none));
-
-    std::vector<Vector<double> > src(2), dst(2);
-    //all components of velocity together
-    src[0].reinit(dof_handler_gen_u.n_dofs());
-    src[1].reinit(dof_handler_p.n_dofs());
-
-    // first system_rhs with random numbers
-    for (unsigned int i=0; i<2; ++i)
-      for (unsigned int j=0; j<src[i].size(); ++j)
-        {
-          const double val = -1. + 2.*random_value<double>();
-          src[i](j) = val;
-        }
+  //For FEEvaluation - using vector valued FE
+  MatrixFree<dim,Number> mf_data_vec(false);
+  mf_data_vec.reinit (dofs_vector, constraints, quad,
+                  typename MatrixFree<dim>::AdditionalData
+                  (MatrixFree<dim>::AdditionalData::none));
 
 
-    typedef std::vector<Vector<double> > VectorType;
-    MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data, mf_data_gen);
-    mf.vmult (dst, src);
+  //For FEEvaluationGen
+  MatrixFree<dim,Number> mf_data_gen(true);
+  mf_data_gen.reinit (dofs_vector, constraints, quad,
+                          typename MatrixFree<dim>::AdditionalData
+                          (MatrixFree<dim>::AdditionalData::none));
+
+
+  //#5666: All components of velocity are treated as one block, pressure is treated as another block
+  typedef std::vector<Vector<Number> > VectorType;
+
+  VectorType src(2), dst(2);
+  //all components of velocity together
+  src[0].reinit(dof_handler.n_dofs());
+  src[1].reinit(dof_handler_p.n_dofs());
+
+  //Debug
+  std::ofstream logfile_check_vec("check_vec_old");
+  deallog.attach(logfile_check_vec);
+
+  // init src with random numbers
+  for (unsigned int i=0; i<2; ++i)
+    for (unsigned int j=0; j<src[i].size(); ++j)
+      {
+        const double val = -1. + 2.*random_value<Number>();
+        src[i](j) = val;
+
+        deallog<<val << std::endl;
+      }
+
+
+
+  deallog.detach();
+
+  //Actual Test with vector valued FE_Q
+  //std::ofstream logfile_sca_old("output_sca_old");
+  std::ofstream logfile_vec_old("output_vec_old");
+  std::ofstream logfile_new("output_vec_new");
+  deallog << std::setprecision (3);
+  deallog << std::setw (6);
+
+
+
+#if 0
+  deallog.attach(logfile_sca_old);
+  MatrixFreeTest<dim,fe_degree,Number, VectorType> mf_sca (mf_data_sca);
+  mf_sca.vmult (dst, src);
+  deallog.detach();
+#endif
+
+  deallog.attach(logfile_vec_old);
+  MatrixFreeTest<dim,fe_degree,Number, VectorType> mf_vec (mf_data_vec);
+  mf_vec.vmult (dst, src);
+  deallog.detach();
+
+  deallog.attach(logfile_new);
+  MatrixFreeTest<dim,fe_degree,Number, VectorType> mf_gen (mf_data_gen);
+  mf_gen.vmult (dst, src);
+  deallog.detach();
 
 #if 0
   double error = 0., tol=1e-10;
