@@ -45,8 +45,14 @@ class MatrixFreeTest
 public:
   typedef typename DoFHandler<dim>::active_cell_iterator CellIterator;
 
-  MatrixFreeTest(const MatrixFree<dim,Number> &data_in): data (data_in), n_q_points_1d(degree_p+2)
+  MatrixFreeTest(const MatrixFree<dim,Number> &data_in, bool check_with_scalar=false):
+	  	  	  data (data_in), n_q_points_1d(degree_p+2), check_with_scalar(check_with_scalar)
   {
+	  deallog<<"Is MatrixFree using primitive element? = "<<data.is_primitive()<<std::endl;
+	  if (!data.is_primitive())
+	  {
+		  deallog<<"Is MatrixFree using scalar or vector element? = "<<(check_with_scalar == true? "scalar" : "vector")<<std::endl;
+	  }
 	  deallog<<"Is MatrixFree using primitive element? = "<<data.is_primitive()<<std::endl;
 	  deallog<<"n_array_elements on this machine = "<<n_array_elements<<std::endl;
 	  deallog<<"n_q_points_1d = "<<n_q_points_1d<<std::endl;
@@ -112,7 +118,7 @@ public:
     }
     else
     {
-    	data.cell_loop (&MatrixFreeTest<dim,degree_p,Number,VectorType>::local_apply<FEEval_V,FEEval_P>,
+   		data.cell_loop (&MatrixFreeTest<dim,degree_p,Number,VectorType>::local_apply<FEEval_V,FEEval_P>,
                     this, dst, src);
     }
 
@@ -122,6 +128,7 @@ private:
   const MatrixFree<dim,Number> &data;
   const int n_q_points_1d;
   const int n_array_elements = VectorizedArray<Number>::n_array_elements;
+  bool check_with_scalar = false;
 };
 
 
@@ -152,12 +159,6 @@ void test ()
   DoFHandler<dim>      dof_handler (triangulation);
   dof_handler.distribute_dofs (fe);
 
-  std::vector<const DoFHandler<dim>*> dofs_vector;
-  dofs_vector.push_back(&dof_handler);
-  dofs_vector.push_back(&dof_handler_p);
-
-  std::cout<<"Initially dofs_per_cell(Pressure, velocity) = ("<<(dof_handler_p.get_fe()).n_dofs_per_cell()<<", "<<(dof_handler.get_fe()).n_dofs_per_cell()<<")"<<std::endl;
-
   ConstraintMatrix dummy_constraints;
   dummy_constraints.close();
   std::vector<const ConstraintMatrix *> constraints;
@@ -165,8 +166,14 @@ void test ()
   constraints.push_back (&dummy_constraints);
   QGauss<1> quad(fe_degree+2);
 
+  std::vector<const DoFHandler<dim>*> dofs_vector;
+  //Remark: The same order should be maintained in reading inside local_apply
+  dofs_vector.push_back(&dof_handler);
+  dofs_vector.push_back(&dof_handler_p);
 
-#if 0
+  std::cout<<"Initially dofs_per_cell(Pressure, velocity) = ("<<(dof_handler_p.get_fe()).n_dofs_per_cell()<<", "<<(dof_handler.get_fe()).n_dofs_per_cell()<<")"<<std::endl;
+
+
   //For FEEvaluation - using scalar valued FE
   DoFHandler<dim>      dof_handler_u (triangulation);
   dof_handler_u.distribute_dofs (fe_u);
@@ -178,7 +185,7 @@ void test ()
   mf_data_sca.reinit (dofs_scalar, constraints, quad,
                   typename MatrixFree<dim>::AdditionalData
                   (MatrixFree<dim>::AdditionalData::none));
-#endif
+
 
   //For FEEvaluation - using vector valued FE
   MatrixFree<dim,Number> mf_data_vec(false);
@@ -186,13 +193,13 @@ void test ()
                   typename MatrixFree<dim>::AdditionalData
                   (MatrixFree<dim>::AdditionalData::none));
 
-
+#if 0
   //For FEEvaluationGen
   MatrixFree<dim,Number> mf_data_gen(true);
   mf_data_gen.reinit (dofs_vector, constraints, quad,
                           typename MatrixFree<dim>::AdditionalData
                           (MatrixFree<dim>::AdditionalData::none));
-
+#endif
 
   //#5666: All components of velocity are treated as one block, pressure is treated as another block
   typedef std::vector<Vector<Number> > VectorType;
@@ -221,7 +228,7 @@ void test ()
   deallog.detach();
 
   //Actual Test with vector valued FE_Q
-  //std::ofstream logfile_sca_old("output_sca_old");
+  std::ofstream logfile_sca_old("output_sca_old");
   std::ofstream logfile_vec_old("output_vec_old");
   std::ofstream logfile_new("output_vec_new");
   deallog << std::setprecision (3);
@@ -229,22 +236,23 @@ void test ()
 
 
 
-#if 0
   deallog.attach(logfile_sca_old);
-  MatrixFreeTest<dim,fe_degree,Number, VectorType> mf_sca (mf_data_sca);
+  MatrixFreeTest<dim,fe_degree,Number, VectorType> mf_sca (mf_data_sca, true);
   mf_sca.vmult (dst, src);
   deallog.detach();
-#endif
+
 
   deallog.attach(logfile_vec_old);
   MatrixFreeTest<dim,fe_degree,Number, VectorType> mf_vec (mf_data_vec);
   mf_vec.vmult (dst, src);
   deallog.detach();
 
+#if 0
   deallog.attach(logfile_new);
   MatrixFreeTest<dim,fe_degree,Number, VectorType> mf_gen (mf_data_gen);
   mf_gen.vmult (dst, src);
   deallog.detach();
+#endif
 
 #if 0
   double error = 0., tol=1e-10;
