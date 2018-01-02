@@ -1,3 +1,176 @@
+#include <deal.II/matrix_free/matrix_free.h>
+#include <deal.II/matrix_free/fe_evaluation.h>
+
+#include <deal.II/base/utilities.h>
+#include <deal.II/lac/block_vector.h>
+#include <deal.II/grid/tria.h>
+#include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/tria_boundary_lib.h>
+#include <deal.II/dofs/dof_accessor.h>
+#include <deal.II/dofs/dof_tools.h>
+#include <deal.II/dofs/dof_handler.h>
+#include <deal.II/dofs/dof_renumbering.h>
+#include <deal.II/lac/constraint_matrix.h>
+#include <deal.II/lac/block_sparse_matrix.h>
+#include <deal.II/lac/block_sparsity_pattern.h>
+#include <deal.II/fe/fe_q.h>
+#include <deal.II/fe/fe_system.h>
+#include <deal.II/fe/fe_values.h>
+#include <deal.II/numerics/vector_tools.h>
+
+#include <iostream>
+#include <complex>
+#include <vector>
+
+using namespace dealii;
+using namespace dealii::internal;
+using namespace std;
+
+const int g_dim = 2, g_fe_degree = 1, g_n_q_points_1d = g_fe_degree+1, g_n_components = 2;
+const int g_base_fe_degree = g_fe_degree;
+
+//TBD: For n_components > 1, vector-valued problem has to be constructed
+//const int g_fe_degree_1c = g_fe_degree, g_fe_degree_2c = g_fe_degree, g_fe_degree_3c = g_fe_degree;
+using Number = double;
+
+const bool evaluate_values = true, evaluate_gradients = false, evaluate_hessians = false;
+
+//template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree=fe
+int main()
+{
+	//////////////////
+
+	VectorizedArray<Number> *values_dofs_actual[g_n_components]; //in
+	VectorizedArray<Number> *scratch_data; //in
+
+
+	//Just allocate a large memory, actual size unimportant for our test
+	scratch_data = new VectorizedArray<Number> [1000];
+
+
+	//out
+	VectorizedArray<Number> *values_quad_old_impl[g_n_components],
+							*values_quad_new_impl[g_n_components];
+	VectorizedArray<Number> *gradients_quad_old_impl[g_n_components][g_dim],
+							*gradients_quad_new_impl[g_n_components][g_dim];
+	VectorizedArray<Number> *hessians_quad_old_impl[g_n_components][(g_dim*(g_dim+1))/2],
+							*hessians_quad_new_impl[g_n_components][(g_dim*(g_dim+1))/2];
+
+
+	/////For simplicity in comparison, we use arrays instead of allocating memory to above output variables
+	const unsigned int first_selected_component = 0;
+	FE_Q<g_dim> fe_u(g_fe_degree);
+	FESystem<g_dim>  fe (fe_u, g_n_components);
+	QGauss<1> quad(g_n_q_points_1d);
+
+	//in
+    MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info_old_impl(quad, fe, fe.component_to_base_index(first_selected_component).first);
+    MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info_new_impl(quad, fe, fe.component_to_base_index(first_selected_component).first,true);
+
+	//FIXME:This count will change when the dofs for each component are different
+	//Give known values to values_dofs_actual, i.e. to nodal_values
+	const int dofs_cnt_per_cell = fe.n_dofs_per_cell ();
+	const int quad_cnt_per_cell = Utilities::fixed_int_power<g_n_q_points_1d,g_dim>::value*g_n_components;
+
+	const int n_array_elements = VectorizedArray<Number>::n_array_elements;
+	const int n_dof_elements = 100;
+	//const int n_eval_elements = (dofs_cnt_per_cell * quad_cnt_per_cell)/static_cast<float>(n_array_elements);
+	const int n_eval_elements = (dofs_cnt_per_cell)/static_cast<float>(n_array_elements);
+
+
+	using namespace std;
+	cout<<endl<<"======= parameters ============"<<endl<<endl;
+
+	cout<<"components = "<<g_n_components<<" ,dim = "<<g_dim<<"  ,fe_degree = "<<g_fe_degree<<"  ,n_q_points_1d = "<<g_n_q_points_1d<<endl;
+	cout<<"DOF per cell = "<<dofs_cnt_per_cell<<", Quad points per cell = "<<quad_cnt_per_cell<<endl<<"Length of one VectorArray element = "<<n_array_elements<<endl;
+	cout<<"Total source DoFs used in this test = "<<n_dof_elements<<endl;
+	cout<<"Number of vectorArray elements used for result = "<<n_eval_elements<<endl;
+
+	cout<<endl<<"======= ========== ============"<<endl;
+
+	VectorizedArray<Number> nodal_values[n_dof_elements];
+
+	std::srand(std::time(nullptr)); // use current time as seed for random generator
+	for (int d = 0; d < n_dof_elements; d++)
+	{
+		for (int n = 0; n < n_array_elements; n++)
+		{
+			nodal_values[d][n] = std::rand()/static_cast<Number>(RAND_MAX);
+		}
+	}
+
+	VectorizedArray<Number> out_values_quad_old_impl[g_n_components][n_eval_elements],
+							out_values_quad_new_impl[g_n_components][n_eval_elements];
+	VectorizedArray<Number> out_gradients_quad_old_impl[g_n_components][g_dim][n_eval_elements],
+							out_gradients_quad_new_impl[g_n_components][g_dim][n_eval_elements];
+	VectorizedArray<Number> out_hessians_quad_old_impl[g_n_components][(g_dim*(g_dim+1))/2][n_eval_elements],
+							out_hessians_quad_new_impl[g_n_components][(g_dim*(g_dim+1))/2][n_eval_elements];
+
+
+	shape_info_old_impl.element_type = internal::MatrixFreeFunctions::tensor_general;
+
+	for (int c = 0; c < g_n_components; c++)
+	{
+		//Same nodal values for all the components
+		values_dofs_actual[c] = nodal_values;
+
+		values_quad_old_impl[c] = out_values_quad_old_impl[c];
+		values_quad_new_impl[c] = out_values_quad_new_impl[c];
+
+		for (int d = 0; d < g_dim; d++)
+		{
+			gradients_quad_old_impl[c][d] = out_gradients_quad_old_impl[c][d];
+			gradients_quad_new_impl[c][d] = out_gradients_quad_new_impl[c][d];
+		}
+
+		for (int e = 0; e < (g_dim*(g_dim+1))/2; e++)
+		{
+			hessians_quad_old_impl[c][e] = out_hessians_quad_old_impl[c][e];
+			hessians_quad_new_impl[c][e] = out_hessians_quad_new_impl[c][e];
+		}
+	}
+
+
+    internal::FEEvaluationImpl<internal::MatrixFreeFunctions::tensor_general,
+    		g_dim, g_fe_degree, g_n_q_points_1d, g_n_components, Number>
+             ::evaluate(shape_info_old_impl, values_dofs_actual, values_quad_old_impl,
+            		 gradients_quad_old_impl, hessians_quad_old_impl, scratch_data,
+                        evaluate_values, evaluate_gradients, evaluate_hessians);
+
+
+	internal::FEEvaluationImplGen<internal::MatrixFreeFunctions::tensor_general,
+				FE_TaylorHood, g_n_q_points_1d, g_dim, g_base_fe_degree, Number>
+           ::evaluate(shape_info_new_impl, values_dofs_actual, values_quad_new_impl,
+        		   gradients_quad_new_impl, hessians_quad_new_impl, scratch_data,
+                      evaluate_values, evaluate_gradients, evaluate_hessians);
+
+
+
+	cout<<"Computation finished...printing results"<<endl;
+
+	//Compare output of both and tell result
+	std::cout<<"Result =============="<<std::endl;
+
+	for (int c = 0; c < g_n_components; c++)
+	{
+		std::cout<<"============================================"<<std::endl;
+		std::cout<<"Comparison result for component ("<<c<<")"<<std::endl;
+		std::cout<<"============================================"<<std::endl;
+		for (int d = 0; d < n_eval_elements; d++)
+		{
+			for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+			{
+				bool res = (std::abs(out_values_quad_old_impl[c][d][n] - out_values_quad_new_impl[c][d][n]) < 10e-4)?true:false;
+				std::cout<<"(old,new) = ("<<out_values_quad_old_impl[c][d][n]<<", "<<out_values_quad_new_impl[c][d][n]<<")   AND  result = "<<res<<std::endl;
+			}
+		}
+	}
+
+
+	delete[] scratch_data;
+}
+
+#if 0
 #include <deal.II/grid/tria.h>
 #include <deal.II/grid/tria_accessor.h>
 #include <deal.II/grid/tria_iterator.h>
@@ -744,4 +917,5 @@ int main()
 
 	delete[] scratch_data;
 }
+#endif
 #endif
