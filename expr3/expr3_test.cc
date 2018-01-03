@@ -7,6 +7,7 @@
 //           - therefore verifies only FE_Q elements
 //           - compare results with tensor_general
 //			 - what about other element types??
+//			 - compare results with FEValues
 //
 /////////////////
 
@@ -73,13 +74,13 @@ public:
 //TBD: For n_components > 1, vector-valued problem has to be constructed
 //const int g_fe_degree_1c = g_fe_degree, g_fe_degree_2c = g_fe_degree, g_fe_degree_3c = g_fe_degree;
 
-template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree=fe_degree>
+template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d=fe_degree+1, int base_fe_degree=fe_degree>
 bool test(bool debug)
 {
 	debugStream mylog;
 	mylog.debug = debug;
 
-	const bool evaluate_values = true, evaluate_gradients = true, evaluate_hessians = true;
+	const bool evaluate_values = true, evaluate_gradients = false, evaluate_hessians = false;
 
 	bool res_values = true, res_gradients = true, res_hessians = true;
 
@@ -267,9 +268,20 @@ bool test(bool debug)
 	std::cout<<"============================="<<std::endl;
 	std::cout<<"         Overall result       "<<std::endl;
 	std::cout<<"============================="<<std::endl;
-	std::cout<<" Function values = "<<(res_values == true?"pass":"fail")<<std::endl;
-	std::cout<<" Function gradients = "<<(res_gradients == true?"pass":"fail")<<std::endl;
-	std::cout<<" Function hessians = "<<(res_hessians == true?"pass":"fail")<<std::endl;
+	if (evaluate_values)
+		std::cout<<" Function values = "<<(res_values == true?"pass":"fail")<<std::endl;
+	else
+		std::cout<<" Function values = "<<"Not evaluated"<<std::endl;
+
+	if (evaluate_gradients)
+		std::cout<<" Function gradients = "<<(res_gradients == true?"pass":"fail")<<std::endl;
+	else
+		std::cout<<" Function gradients = "<<"Not evaluated"<<std::endl;
+
+	if (evaluate_hessians)
+		std::cout<<" Function hessians = "<<(res_hessians == true?"pass":"fail")<<std::endl;
+	else
+		std::cout<<" Function hessians = "<<"Not evaluated"<<std::endl;
 
 
 	delete[] scratch_data;
@@ -295,8 +307,81 @@ int main(int argc, char *argv[])
 
 	//n_comp, dim, fe_deg, q_1d, base_degree
 
+#if 0 //TBD: failures but analyze later
+	//1 comp, 1 dim, 1 degree
+	res = test<double,1,1,1>(debug);
+
+	//1 comp, 1 dim, 2 degrees
+	res = test<double,1,1,2>(debug);
+
+	//1 comp, 1 dim, 3 degrees
+	res = test<double,1,1,3>(debug);
+
+	//1 comp, 2 dim, 1 degree
+	res = test<double,1,2,1>(debug);
+
+	//1 comp, 2 dim, 2 degrees
+	res = test<double,1,2,2>(debug);
+
+	//1 comp, 2 dim, 3 degrees
+	res = test<double,1,2,3>(debug);
+
+	//1 comp, 3 dim, 1 degree
+	res = test<double,1,3,1>(debug);
+
+	//1 comp, 3 dim, 2 degrees
+	res = test<double,1,3,2>(debug);
+
+	//1 comp, 3 dim, 3 degree
+	res = test<double,1,3,3>(debug);
+#endif
+
+
+	//2 comp, 2 dim, 1 degree -> Pass
+	//res = test<double,2,2,1>(debug);
+
+	//2 comp, 2 dim, 2 degrees -> Fail
+	res = test<double,2,2,2>(debug);
+
+	//2 comp, 2 dim, 3 degrees -> Fail
+	//res = test<double,2,2,3>(debug);
+
+
+#if 0
+	//2 comp, 3 dim, 1 degree
+	res = test<double,2,3,1>(debug);
+
+	//2 comp, 3 dim, 2 degrees
+	res = test<double,2,3,2>(debug);
+
+	//2 comp, 3 dim, 3 degrees
+	res = test<double,2,3,3>(debug);
+
+
+	//3 comp, 2 dim, 1 degree
+	res = test<double,3,2,1>(debug);
+
+	//3 comp, 2 dim, 2 degrees
+	res = test<double,3,2,2>(debug);
+
+	//3 comp, 2 dim, 3 degrees
+	res = test<double,3,2,3>(debug);
+
+
+	//3 comp, 3 dim, 1 degree
+	res = test<double,3,3,1>(debug);
+
+	//3 comp, 3 dim, 2 degrees
+	res = test<double,3,3,2>(debug);
+
+	//3 comp, 3 dim, 3 degrees
+	res = test<double,3,3,3>(debug);
+
+#endif
+
+	//1 comp, 2 dim
 	//res = test<double,2,2,1,2>(debug);
-	res = test<double,2,2,2,3>(debug); //fails
+	//res = test<double,2,2,2,3>(debug); //fails
 	//res = test<double,3,2,1,2>(); //Fails for new
 
 	return 0;
