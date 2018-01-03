@@ -80,7 +80,7 @@ bool test(bool debug)
 	debugStream mylog;
 	mylog.debug = debug;
 
-	const bool evaluate_values = true, evaluate_gradients = false, evaluate_hessians = false;
+	const bool evaluate_values = true, evaluate_gradients = true, evaluate_hessians = true;
 
 	bool res_values = true, res_gradients = true, res_hessians = true;
 
@@ -125,6 +125,8 @@ bool test(bool debug)
 
 
 	using namespace std;
+	if (debug)
+	{
 	cout<<endl<<"======= parameters ============"<<endl<<endl;
 
 	cout<<"components = "<<n_components<<" ,dim = "<<dim<<"  ,fe_degree = "<<fe_degree<<"  ,n_q_points_1d = "<<n_q_points_1d<<endl;
@@ -133,6 +135,7 @@ bool test(bool debug)
 	cout<<"Number of vectorArray elements used for result = "<<n_eval_elements<<endl;
 
 	cout<<endl<<"======= ========== ============"<<endl;
+	}
 
 	VectorizedArray<Number> nodal_values[n_dof_elements];
 
@@ -189,9 +192,6 @@ bool test(bool debug)
            ::evaluate(shape_info_new_impl, values_dofs_actual, values_quad_new_impl,
         		   gradients_quad_new_impl, hessians_quad_new_impl, scratch_data,
                       evaluate_values, evaluate_gradients, evaluate_hessians);
-
-
-	std::cout<<"Computation finished...printing results"<<std::endl;
 
 	bool res = false;
 
@@ -266,7 +266,7 @@ bool test(bool debug)
 	}
 
 	std::cout<<"============================="<<std::endl;
-	std::cout<<"         Overall result       "<<std::endl;
+	std::cout<<"Overall result for (n_comp, dim, fe_deg) = ("<<n_components<<","<<dim<<","<<fe_degree<<")"<<std::endl;
 	std::cout<<"============================="<<std::endl;
 	if (evaluate_values)
 		std::cout<<" Function values = "<<(res_values == true?"pass":"fail")<<std::endl;
@@ -292,7 +292,7 @@ bool test(bool debug)
 
 int main(int argc, char *argv[])
 {
-	bool res, debug = false;
+	bool res, debug = true;
 
 	if ( argc > 2 )
 	{
@@ -307,82 +307,40 @@ int main(int argc, char *argv[])
 
 	//n_comp, dim, fe_deg, q_1d, base_degree
 
-#if 0 //TBD: failures but analyze later
-	//1 comp, 1 dim, 1 degree
+	//1-D tests
 	res = test<double,1,1,1>(debug);
-
-	//1 comp, 1 dim, 2 degrees
-	res = test<double,1,1,2>(debug);
-
-	//1 comp, 1 dim, 3 degrees
-	res = test<double,1,1,3>(debug);
-
-	//1 comp, 2 dim, 1 degree
-	res = test<double,1,2,1>(debug);
-
-	//1 comp, 2 dim, 2 degrees
-	res = test<double,1,2,2>(debug);
-
-	//1 comp, 2 dim, 3 degrees
-	res = test<double,1,2,3>(debug);
-
-	//1 comp, 3 dim, 1 degree
-	res = test<double,1,3,1>(debug);
-
-	//1 comp, 3 dim, 2 degrees
-	res = test<double,1,3,2>(debug);
-
-	//1 comp, 3 dim, 3 degree
-	res = test<double,1,3,3>(debug);
-#endif
-
-
-	//2 comp, 2 dim, 1 degree -> Pass
-	//res = test<double,2,2,1>(debug);
-
-	//2 comp, 2 dim, 2 degrees -> Fail
-	res = test<double,2,2,2>(debug);
-
-	//2 comp, 2 dim, 3 degrees -> Fail
-	//res = test<double,2,2,3>(debug);
-
+	//res = test<double,1,1,2>(debug);
+	//res = test<double,1,1,3>(debug);
 
 #if 0
-	//2 comp, 3 dim, 1 degree
-	res = test<double,2,3,1>(debug);
+	//2-D tests
+	res = test<double,1,2,1>(debug);
+	res = test<double,1,2,2>(debug);
+	res = test<double,1,2,3>(debug);
 
-	//2 comp, 3 dim, 2 degrees
-	res = test<double,2,3,2>(debug);
+	res = test<double,2,2,1>(debug);
+	res = test<double,2,2,2>(debug);
+	res = test<double,2,2,3>(debug);
 
-	//2 comp, 3 dim, 3 degrees
-	res = test<double,2,3,3>(debug);
-
-
-	//3 comp, 2 dim, 1 degree
 	res = test<double,3,2,1>(debug);
-
-	//3 comp, 2 dim, 2 degrees
 	res = test<double,3,2,2>(debug);
-
-	//3 comp, 2 dim, 3 degrees
 	res = test<double,3,2,3>(debug);
-
-
-	//3 comp, 3 dim, 1 degree
-	res = test<double,3,3,1>(debug);
-
-	//3 comp, 3 dim, 2 degrees
-	res = test<double,3,3,2>(debug);
-
-	//3 comp, 3 dim, 3 degrees
-	res = test<double,3,3,3>(debug);
-
 #endif
 
-	//1 comp, 2 dim
-	//res = test<double,2,2,1,2>(debug);
-	//res = test<double,2,2,2,3>(debug); //fails
-	//res = test<double,3,2,1,2>(); //Fails for new
+#if 0 //unimplemeted yet
+	//3-D tests
+	res = test<double,1,3,1>(debug);
+	res = test<double,1,3,2>(debug);
+	res = test<double,1,3,3>(debug);
+
+	res = test<double,2,3,1>(debug);
+	res = test<double,2,3,2>(debug);
+	res = test<double,2,3,3>(debug);
+
+	res = test<double,3,3,1>(debug);
+	res = test<double,3,3,2>(debug);
+	res = test<double,3,3,3>(debug);
+#endif
 
 	return 0;
 }
