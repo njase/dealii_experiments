@@ -39,7 +39,7 @@ class MatrixFreeTest
     using FEEvalGen_P = FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number>;
 
     using FEEval_V = FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number>;
-    using FEEval_P = FEEvaluation<dim,degree_p,degree_p+2,1,  Number>;
+    using FEEval_P = FEEvaluation<dim,degree_p,degree_p+2,1,Number>;
 
 public:
   typedef typename DoFHandler<dim>::active_cell_iterator CellIterator;
@@ -62,74 +62,41 @@ public:
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
 
+	typedef VectorizedArray<Number> vector_t;
 	TypeV velocity (data, 0);
 	TypeP pressure (data, 1);
 
-	const unsigned int v_dofs_per_cell = (data.get_dof_handler(0).get_fe()).n_dofs_per_cell();
-	const unsigned int p_dofs_per_cell = (data.get_dof_handler(1).get_fe()).n_dofs_per_cell();
-
-	deallog<<"dofs_per_cell(Pressure, velocity) = ("<<p_dofs_per_cell<<", "<<v_dofs_per_cell<<")"<<std::endl;
-
-	VectorizedArray<Number> *p_values;
-
-	int p_vectorized_elements = (p_dofs_per_cell*n_q_points_1d)/n_array_elements;
-
-	std::cout<<"p elements in one iteration = "<<(p_dofs_per_cell*n_q_points_1d)<<std::endl;
-
-
-	VectorizedArray<Number> *v_values;
-
-	int v_vectorized_elements = (v_dofs_per_cell*n_q_points_1d)/n_array_elements;
-
-	std::cout<<"v elements in one iteration = "<<(v_vectorized_elements*n_array_elements)<<std::endl;
-
-	int k = 1;
 
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
-#if 0
-         	pressure.reinit(cell);
-            pressure.read_dof_values (src, 1);
-            pressure.evaluate (true,false,false);
+        velocity.reinit (cell);
+        velocity.read_dof_values (src.block(0));
+        velocity.evaluate (false,true,false);
+        pressure.reinit (cell);
+        pressure.read_dof_values (src.block(1));
+        pressure.evaluate (true,false,false);
 
-            p_values = pressure.begin_values();
-            for (int i =0; i<p_vectorized_elements; i++) //loop over all elements in this cell
-            {
-            	for (unsigned int j=0; j<n_array_elements; j++)
-            	{
-            		deallog<<p_values[i][j] << std::endl;
-            	}
-            }
+        for (unsigned int q=0; q<velocity.n_q_points; ++q)
+          {
+            Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
+            vector_t pres = pressure.get_value(q);
+            vector_t div = -trace(grad_u);
+            pressure.submit_value   (div, q);
 
-            if (k == 1)
-            {
-            	//break;
-            }
-            else
-            	k++;
+            // subtract p * I
+            for (unsigned int d=0; d<dim; ++d)
+              grad_u[d][d] -= pres;
 
-#endif
+            velocity.submit_gradient(grad_u, q);
+          }
 
-            velocity.reinit(cell);
-            velocity.read_dof_values (src.block(0));
-            velocity.evaluate (true,false,false);
-
-            v_values = velocity.begin_values();
-            for (int i =0; i<v_vectorized_elements; i++) //loop over all elements in this cell
-            {
-            	for (unsigned int j=0; j<n_array_elements; j++)
-            	{
-            		deallog<<v_values[i][j] << std::endl;
-            	}
-            }
-
-            if (k == 1)
-            {
-            	break;
-            }
-            else
-            	k++;
+        velocity.integrate (false,true);
+        velocity.distribute_local_to_global (dst.block(0));
+        pressure.integrate (true,false);
+        pressure.distribute_local_to_global (dst.block(1));
       }
+
+    //std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
 
 }
 
@@ -200,6 +167,13 @@ void test ()
   std::cout<<"Initially dofs_per_cell(Pressure, velocity) = ("<<(dof_handler_p.get_fe()).n_dofs_per_cell()<<", "<<(dof_handler.get_fe()).n_dofs_per_cell()<<")"<<std::endl;
 
 
+  std::cout << "Number of active cells: "
+            << triangulation.n_active_cells()
+            << std::endl
+            << "Total number of cells: "
+            << triangulation.n_cells()
+            << std::endl;
+
   //For FEEvaluation - using vector valued FE
   MatrixFree<dim,Number> mf_data_vec(false);
   mf_data_vec.reinit (dofs_vector, constraints, quad,
@@ -251,12 +225,24 @@ void test ()
   deallog.attach(logfile_vec_old);
   MatrixFreeTest<dim,fe_degree,Number, VectorType> mf_vec (mf_data_vec);
   mf_vec.vmult(dst_vec, src_vec);
+  //Write to file
+  for (unsigned int i=0; i<2; ++i)
+    for (unsigned int j=0; j<dst_vec.block(i).size(); ++j)
+      {
+        deallog<<dst_vec.block(i)(j)<< std::endl;
+      }
   deallog.detach();
 
 
   deallog.attach(logfile_new);
   MatrixFreeTest<dim,fe_degree,Number, VectorType> mf_gen (mf_data_gen);
   mf_gen.vmult(dst_vec, src_vec);
+  //Write to file
+  for (unsigned int i=0; i<2; ++i)
+    for (unsigned int j=0; j<dst_vec.block(i).size(); ++j)
+      {
+        deallog<<dst_vec.block(i)(j)<< std::endl;
+      }
   deallog.detach();
 
 
@@ -295,8 +281,8 @@ int main ()
   {
     //deallog << std::endl << "Test with doubles" << std::endl << std::endl;
     //deallog.push("2d");
-    //test<2,1>();
-    test<2,2>();
+    test<2,1>();
+    //test<2,2>();
     //test<2,3>();
     //test<2,4>();
     //deallog.pop();

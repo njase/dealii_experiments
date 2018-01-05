@@ -74,15 +74,18 @@ public:
 //TBD: For n_components > 1, vector-valued problem has to be constructed
 //const int g_fe_degree_1c = g_fe_degree, g_fe_degree_2c = g_fe_degree, g_fe_degree_3c = g_fe_degree;
 
+
+
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d=fe_degree+1, int base_fe_degree=fe_degree>
 bool test(bool debug)
 {
 	debugStream mylog;
 	mylog.debug = debug;
 
-	const bool evaluate_values = true, evaluate_gradients = true, evaluate_hessians = true;
+	const bool evaluate_values = true;
+	const bool evaluate_gradients = true;
+	const bool evaluate_hessians = true;
 
-	bool res_values = true, res_gradients = true, res_hessians = true;
 
 	//////////////////
 
@@ -92,7 +95,6 @@ bool test(bool debug)
 
 	//Just allocate a large memory, actual size unimportant for our test
 	scratch_data = new VectorizedArray<Number> [1000];
-
 
 	//out
 	VectorizedArray<Number> *values_quad_old_impl[n_components],
@@ -120,21 +122,72 @@ bool test(bool debug)
 
 	const int n_array_elements = VectorizedArray<Number>::n_array_elements;
 	const int n_dof_elements = 100;
-	//const int n_eval_elements = (dofs_cnt_per_cell * quad_cnt_per_cell)/static_cast<float>(n_array_elements);
-	const int n_eval_elements = (dofs_cnt_per_cell)/static_cast<float>(n_array_elements);
+	//Note : Final tensor product evaluation operates on vectorized elements for dofs_cnt_per_cell times
+	const int n_eval_elements = (dofs_cnt_per_cell); ///static_cast<float>(n_array_elements);
+
+	VectorizedArray<Number> out_values_quad_old_impl[n_components][n_eval_elements],
+							out_values_quad_new_impl[n_components][n_eval_elements];
+	VectorizedArray<Number> out_gradients_quad_old_impl[n_components][dim][n_eval_elements],
+							out_gradients_quad_new_impl[n_components][dim][n_eval_elements];
+	VectorizedArray<Number> out_hessians_quad_old_impl[n_components][(dim*(dim+1))/2][n_eval_elements],
+							out_hessians_quad_new_impl[n_components][(dim*(dim+1))/2][n_eval_elements];
+
+
+	for (int c=0; c<n_components; c++)
+	{
+		for (int e = 0; e < n_eval_elements; e++)
+		{
+			for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+			{
+				out_values_quad_old_impl[c][e][n] = 0;
+				out_values_quad_new_impl[c][e][n] = 0;
+			}
+		}
+	}
+
+	for (int c=0; c<n_components; c++)
+	{
+		for (int d=0; d<dim; d++)
+		{
+			for (int e = 0; e < n_eval_elements; e++)
+			{
+				for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+				{
+					out_gradients_quad_old_impl[c][d][e][n] = 0;
+					out_gradients_quad_new_impl[c][d][e][n] = 0;
+				}
+			}
+		}
+	}
+
+	for (int c=0; c<n_components; c++)
+	{
+		for (int d=0; d<((dim*(dim+1))/2); d++)
+		{
+			for (int e = 0; e < n_eval_elements; e++)
+			{
+				for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+				{
+					out_hessians_quad_old_impl[c][d][e][n] = 0;
+					out_hessians_quad_new_impl[c][d][e][n] = 0;
+				}
+			}
+		}
+	}
+
 
 
 	using namespace std;
 	if (debug)
 	{
-	cout<<endl<<"======= parameters ============"<<endl<<endl;
+	cout<<"======= parameters ============"<<endl;
 
 	cout<<"components = "<<n_components<<" ,dim = "<<dim<<"  ,fe_degree = "<<fe_degree<<"  ,n_q_points_1d = "<<n_q_points_1d<<endl;
 	cout<<"DOF per cell = "<<dofs_cnt_per_cell<<", Quad points per cell = "<<quad_cnt_per_cell<<endl<<"Length of one VectorArray element = "<<n_array_elements<<endl;
 	cout<<"Total source DoFs used in this test = "<<n_dof_elements<<endl;
 	cout<<"Number of vectorArray elements used for result = "<<n_eval_elements<<endl;
 
-	cout<<endl<<"======= ========== ============"<<endl;
+	cout<<"======= ========== ============"<<endl<<endl;
 	}
 
 	VectorizedArray<Number> nodal_values[n_dof_elements];
@@ -147,14 +200,6 @@ bool test(bool debug)
 			nodal_values[d][n] = std::rand()/static_cast<Number>(RAND_MAX);
 		}
 	}
-
-	VectorizedArray<Number> out_values_quad_old_impl[n_components][n_eval_elements],
-							out_values_quad_new_impl[n_components][n_eval_elements];
-	VectorizedArray<Number> out_gradients_quad_old_impl[n_components][dim][n_eval_elements],
-							out_gradients_quad_new_impl[n_components][dim][n_eval_elements];
-	VectorizedArray<Number> out_hessians_quad_old_impl[n_components][(dim*(dim+1))/2][n_eval_elements],
-							out_hessians_quad_new_impl[n_components][(dim*(dim+1))/2][n_eval_elements];
-
 
 	shape_info_old_impl.element_type = internal::MatrixFreeFunctions::tensor_general;
 
@@ -194,75 +239,73 @@ bool test(bool debug)
                       evaluate_values, evaluate_gradients, evaluate_hessians);
 
 	bool res = false;
+	bool res_values = true, res_gradients = true, res_hessians = true;
 
 	if (evaluate_values == true) {
-	//Compare output of both and tell result
-	mylog<<"Result for values=============="<<std::endl;
+		//Compare output of both and tell result
+		mylog<<"Result for values   =============="<<std::endl;
 
-	for (int c = 0; c < n_components; c++)
-	{
-		mylog<<"============================================"<<std::endl;
-		mylog<<"Comparison result for component ("<<c<<")"<<std::endl;
-		mylog<<"============================================"<<std::endl;
-		for (int e = 0; e < n_eval_elements; e++)
+		for (int c = 0; c < n_components; c++)
 		{
-			for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+			mylog<<"Comparison result for component ("<<c<<")"<<std::endl;
+
+			for (int e = 0; e < n_eval_elements; e++)
 			{
-				res = (std::abs(out_values_quad_old_impl[c][e][n] - out_values_quad_new_impl[c][e][n]) < 10e-4)?true:false;
-				mylog<<"(old,new) = ("<<out_values_quad_old_impl[c][e][n]<<", "<<out_values_quad_new_impl[c][e][n]<<")   AND  result = "<<res<<std::endl;
-				if (false == res)
-					res_values = false;
+				for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+				{
+					res = (std::abs(out_values_quad_old_impl[c][e][n] - out_values_quad_new_impl[c][e][n]) < 10e-4)?true:false;
+					mylog<<"(old,new) = ("<<out_values_quad_old_impl[c][e][n]<<", "<<out_values_quad_new_impl[c][e][n]<<")   AND  result = "<<res<<std::endl;
+					if (false == res)
+						res_values = false;
+				}
 			}
 		}
-	}
 	}
 
 	if (evaluate_gradients == true) {
-	mylog<<"Result for gradients=============="<<std::endl;
+		mylog<<"Result for gradients  =============="<<std::endl;
 
-	for (int c = 0; c < n_components; c++)
-	{
-		mylog<<"============================================"<<std::endl;
-		mylog<<"Comparison result for component ("<<c<<")"<<std::endl;
-		mylog<<"============================================"<<std::endl;
-		for (int d = 0; d < dim; d++)
+		for (int c = 0; c < n_components; c++)
 		{
-			for (int e = 0; e < n_eval_elements; e++)
+			mylog<<"Comparison result for component ("<<c<<")"<<std::endl;
+
+			for (int d = 0; d < dim; d++)
 			{
-				for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+				for (int e = 0; e < n_eval_elements; e++)
 				{
-					res = (std::abs(out_gradients_quad_old_impl[c][d][e][n] - out_gradients_quad_new_impl[c][d][e][n]) < 10e-4)?true:false;
-					mylog<<"(old,new) = ("<<out_gradients_quad_old_impl[c][d][e][n]<<", "<<out_gradients_quad_new_impl[c][d][e][n]<<")   AND  result = "<<res<<std::endl;
-					if (false == res)
+					for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+					{
+						res = (std::abs(out_gradients_quad_old_impl[c][d][e][n] - out_gradients_quad_new_impl[c][d][e][n]) < 10e-4)?true:false;
+						mylog<<"(old,new) = ("<<out_gradients_quad_old_impl[c][d][e][n]<<", "<<out_gradients_quad_new_impl[c][d][e][n]<<")   AND  result = "<<res<<std::endl;
+						if (false == res)
 							res_gradients = false;
+					}
 				}
 			}
 		}
-	}
 	}
 
 	if (evaluate_hessians == true) {
-	mylog<<"Result for hessians=============="<<std::endl;
+		mylog<<"Result for hessians  =============="<<std::endl;
 
-	for (int c = 0; c < n_components; c++)
-	{
-		mylog<<"============================================"<<std::endl;
-		mylog<<"Comparison result for component ("<<c<<")"<<std::endl;
-		mylog<<"============================================"<<std::endl;
-		for (int d = 0; d < (dim*(dim+1))/2; d++)
+		for (int c = 0; c < n_components; c++)
 		{
-			for (int e = 0; e < n_eval_elements; e++)
+			mylog<<"Comparison result for component ("<<c<<")"<<std::endl;
+
+			for (int d = 0; d < (dim*(dim+1))/2; d++)
 			{
-				for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+				for (int e = 0; e < n_eval_elements; e++)
 				{
-					res = (std::abs(out_hessians_quad_old_impl[c][d][e][n] - out_hessians_quad_new_impl[c][d][e][n]) < 10e-4)?true:false;
-					mylog<<"(old,new) = ("<<out_hessians_quad_old_impl[c][d][e][n]<<", "<<out_hessians_quad_new_impl[c][d][e][n]<<")   AND  result = "<<res<<std::endl;
-					if (false == res)
+					for (int n = 0; n < n_array_elements; n++) //index in the vectorizedArray
+					{
+						res = (std::abs(out_hessians_quad_old_impl[c][d][e][n] - out_hessians_quad_new_impl[c][d][e][n]) < 10e-4)?true:false;
+						mylog<<"(old,new) = ("<<out_hessians_quad_old_impl[c][d][e][n]<<", "<<out_hessians_quad_new_impl[c][d][e][n]<<")   AND  result = "<<res<<std::endl;
+						if (false == res)
 							res_hessians = false;
+					}
 				}
 			}
 		}
-	}
 	}
 
 	std::cout<<"============================="<<std::endl;
@@ -292,12 +335,11 @@ bool test(bool debug)
 
 int main(int argc, char *argv[])
 {
-	bool res, debug = true;
+	bool res, debug = false;
 
 	if ( argc > 2 )
 	{
 		std::cout<<"Warning : too many input arguments - ignored"<<std::endl;
-	    // We print argv[0] assuming it is the program name
 	    cout<<"usage: "<< argv[0] <<" <filename>\n";
 	}
 
@@ -305,42 +347,26 @@ int main(int argc, char *argv[])
 		debug = true;
 
 
+	//note: This test only suppotrs n_components = dim since thats how FEEvaluationGen is designed
+
 	//n_comp, dim, fe_deg, q_1d, base_degree
+
 
 	//1-D tests
 	res = test<double,1,1,1>(debug);
-	//res = test<double,1,1,2>(debug);
-	//res = test<double,1,1,3>(debug);
+	res = test<double,1,1,2>(debug);
+	res = test<double,1,1,3>(debug);
 
-#if 0
 	//2-D tests
-	res = test<double,1,2,1>(debug);
-	res = test<double,1,2,2>(debug);
-	res = test<double,1,2,3>(debug);
-
 	res = test<double,2,2,1>(debug);
 	res = test<double,2,2,2>(debug);
 	res = test<double,2,2,3>(debug);
 
-	res = test<double,3,2,1>(debug);
-	res = test<double,3,2,2>(debug);
-	res = test<double,3,2,3>(debug);
-#endif
 
-#if 0 //unimplemeted yet
 	//3-D tests
-	res = test<double,1,3,1>(debug);
-	res = test<double,1,3,2>(debug);
-	res = test<double,1,3,3>(debug);
-
-	res = test<double,2,3,1>(debug);
-	res = test<double,2,3,2>(debug);
-	res = test<double,2,3,3>(debug);
-
 	res = test<double,3,3,1>(debug);
 	res = test<double,3,3,2>(debug);
 	res = test<double,3,3,3>(debug);
-#endif
 
 	return 0;
 }
