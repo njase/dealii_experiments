@@ -213,9 +213,12 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::compa
 {
 	bool res_hessians = true;
 	bool res;
-	const std::string user = (id==0?"Evaluate":"Integrate");
 
-	mylog<<"Result for hessians ("<<user<<")=============="<<std::endl;
+	if (id != 0)
+	{
+		std::cout<<"Error: Result for hessians not computed as no integrate functionality available"<<std::endl;
+		return false;
+	}
 
 	for (int c = 0; c < n_components; c++)
 	{
@@ -379,7 +382,7 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 
 	bool res_integrate_values = false, res_integrate_gradients = false;
 
-	if (integrate_values == true || integrate_gradients == true)
+	if (integrate_values == true)
 	{
 		internal::FEEvaluationImpl<internal::MatrixFreeFunctions::tensor_general,
     		dim, fe_degree, n_q_points_1d, n_components, Number>
@@ -393,16 +396,29 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 				::integrate(shape_info_new_impl, values_quad_new_impl, values_dofs_actual,
         		   gradients_quad_new_impl, scratch_data,
         		   integrate_values, integrate_gradients);
-	}
 
-	if (integrate_values == true) {
 		res_integrate_values = compare_values(1);
 	}
 
+#if 0
 	if (integrate_gradients == true)
 	{
-		res_integrate_gradients = compare_gradients(1);
+		internal::FEEvaluationImpl<internal::MatrixFreeFunctions::tensor_general,
+    		dim, fe_degree, n_q_points_1d, n_components, Number>
+             ::integrate(shape_info_old_impl, gradients_quad_old_impl, values_quad_old_impl,
+            		 values_dofs_actual, scratch_data,
+            		 integrate_values, integrate_gradients);
+
+
+		internal::FEEvaluationImplGen<internal::MatrixFreeFunctions::tensor_general,
+				FE_TaylorHood, n_q_points_1d, dim, base_fe_degree, Number>
+				::integrate(shape_info_new_impl, gradients_quad_new_impl, values_quad_new_impl,
+					values_dofs_actual, scratch_data,
+        		   integrate_values, integrate_gradients);
+
+		res_integrate_values = compare_gradients(1);
 	}
+#endif
 
 	std::cout<<"============================="<<std::endl;
 	std::cout<<"Overall result for (n_comp, dim, fe_deg) = ("<<n_components<<","<<dim<<","<<fe_degree<<")"<<std::endl;
@@ -458,21 +474,20 @@ int main(int argc, char *argv[])
 	//n_comp, dim, fe_deg, q_1d, base_degree
 
 
-#if 0
     //1-D tests
     res = Test<double,1,1,1>().run(debug);
-    res = Test<double,1,1,2>().run(debug);
-    res = Test<double,1,1,3>().run(debug);
-#endif
+    //res = Test<double,1,1,2>().run(debug);
+    //res = Test<double,1,1,3>().run(debug);
+
     //2-D tests
     res = Test<double,2,2,1>().run(debug);
-    //res = Test<double,2,2,2>().run(debug);
-    //res = Test<double,2,2,3>().run(debug);
-#if 0
+    res = Test<double,2,2,2>().run(debug);
+    res = Test<double,2,2,3>().run(debug);
+
     //3-D tests
     res = Test<double,3,3,1>().run(debug);
     res = Test<double,3,3,2>().run(debug);
     res = Test<double,3,3,3>().run(debug);
-#endif
+
 	return 0;
 }
