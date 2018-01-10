@@ -81,6 +81,9 @@ class Test{
     static const unsigned int static_dofs_per_component = Utilities::fixed_int_power<fe_degree+1,dim>::value;
     static const unsigned int static_dofs_per_cell = static_dofs_per_component *n_components;
 
+    const bool evaluate_values, evaluate_gradients, evaluate_hessians;
+    const bool integrate_values, integrate_gradients;
+
     debugStream mylog;
     int n_eval_elements = 0;
 
@@ -100,13 +103,32 @@ class Test{
 	bool compare_gradients(int);
 	bool compare_hessians(int);
 public:
-	Test();
+	Test() = delete;
+	Test(bool evaluate_values, bool evaluate_gradients, bool evaluate_hessians,
+		bool integrate_values, bool integrate_gradients);
 	bool run(bool debug);
 };
 
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
-Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::Test()
+Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::Test(
+		bool evaluate_values, bool evaluate_gradients, bool evaluate_hessians,
+		bool integrate_values, bool integrate_gradients) :
+		evaluate_values(evaluate_values), evaluate_gradients(evaluate_gradients),
+		evaluate_hessians(evaluate_hessians), integrate_values(integrate_values),
+		integrate_gradients(integrate_gradients)
 {
+	if (integrate_values == true && evaluate_values == false)
+	{
+		std::cout<<"Error: Must evaluate values before integrating them "<<std::endl;
+		return;
+	}
+
+	if (integrate_gradients == true && evaluate_gradients == false)
+	{
+		std::cout<<"Error: Must evaluate gradients before integrating them "<<std::endl;
+		return;
+	}
+
 	for (int c=0; c<n_components; c++)
 	{
 		for (int e = 0; e < static_dofs_per_cell; e++)
@@ -301,26 +323,6 @@ template <typename Number, int n_components, int dim, int fe_degree, int n_q_poi
 bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(bool debug)
 {
 	mylog.debug = debug;
-
-	const bool evaluate_values = true;
-	const bool evaluate_gradients = false;
-	const bool evaluate_hessians = false;
-
-	const bool integrate_values = true;
-	const bool integrate_gradients = false;
-
-	if (integrate_values == true && evaluate_values == false)
-	{
-		std::cout<<"Error: Must evaluate values before integrating them "<<std::endl;
-		return false;
-	}
-
-	if (integrate_gradients == true && evaluate_gradients == false)
-	{
-		std::cout<<"Error: Must evaluate gradients before integrating them "<<std::endl;
-		return false;
-	}
-
 
 	//////////////////
 
@@ -543,6 +545,13 @@ int main(int argc, char *argv[])
 	if (argc > 1 && std::string(argv[1]) == "--debug")
 		debug = true;
 
+	const bool evaluate_values = true;
+	const bool evaluate_gradients = true;
+	const bool evaluate_hessians = true;
+
+	const bool integrate_values = true;
+	const bool integrate_gradients = true;
+
 
 	//note: This test only suppotrs n_components = dim since thats how FEEvaluationGen is designed
 
@@ -550,19 +559,34 @@ int main(int argc, char *argv[])
 
 
     //1-D tests
-    res = Test<double,1,1,1>().run(debug);
-    res = Test<double,1,1,2>().run(debug);
-    res = Test<double,1,1,3>().run(debug);
+    res = Test<double,1,1,1>(evaluate_values,evaluate_gradients,evaluate_hessians,
+    						integrate_values,integrate_gradients).run(debug);
+
+    res = Test<double,1,1,2>(evaluate_values,evaluate_gradients,evaluate_hessians,
+			integrate_values,integrate_gradients).run(debug);
+
+    res = Test<double,1,1,3>(evaluate_values,evaluate_gradients,evaluate_hessians,
+			integrate_values,integrate_gradients).run(debug);
 
     //2-D tests
-    res = Test<double,2,2,1>().run(debug);
-    res = Test<double,2,2,2>().run(debug);
-    res = Test<double,2,2,3>().run(debug);
+    res = Test<double,2,2,1>(evaluate_values,evaluate_gradients,evaluate_hessians,
+			integrate_values,integrate_gradients).run(debug);
+
+    res = Test<double,2,2,2>(evaluate_values,evaluate_gradients,evaluate_hessians,
+			integrate_values,integrate_gradients).run(debug);
+
+    res = Test<double,2,2,3>(evaluate_values,evaluate_gradients,evaluate_hessians,
+			integrate_values,integrate_gradients).run(debug);
 
     //3-D tests
-    res = Test<double,3,3,1>().run(debug);
-    res = Test<double,3,3,2>().run(debug);
-    res = Test<double,3,3,3>().run(debug);
+    res = Test<double,3,3,1>(evaluate_values,evaluate_gradients,evaluate_hessians,
+			integrate_values,integrate_gradients).run(debug);
+
+    res = Test<double,3,3,2>(evaluate_values,evaluate_gradients,evaluate_hessians,
+			integrate_values,integrate_gradients).run(debug);
+
+    res = Test<double,3,3,3>(evaluate_values,evaluate_gradients,evaluate_hessians,
+			integrate_values,integrate_gradients).run(debug);
 
 	return 0;
 }
