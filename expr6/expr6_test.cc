@@ -2,17 +2,8 @@
 //
 // Purpose : To compare unit cell evaluation of - basis functions evaluated on all quad points
 //			 - Using FiniteElement functions and ShapeInfo functions
-// 			 - for FE_Q and RT elements, for all components
-
-#if 0
-//To compare the results of vector valued FEEvaluationGen
-//           against FEValues for FE_Q and RT elements and using appropriate ShapeInfo object
-//			 No MatrixFree object is needed, this is low level unit test
-//
-//			 First check for FEEvaluation and then replace with FEEvaluationGen
-//			 Compare for values, gradients, hesians, integration - on both unit cell
-//			 and real cell
-#endif
+// 			 - for RT elements, for all components
+//			 - compare values, gradients and hessians
 /////////////////
 
 #include "tests.h"
@@ -44,6 +35,7 @@
 using namespace dealii;
 using namespace dealii::internal;
 using namespace std;
+
 
 class debugStream{
 
@@ -148,67 +140,69 @@ void test_mesh (Triangulation<2> &tria,
   tria.create_triangulation (points, cells, SubCellData());
 }
 
-//TBD: For n_components > 1, vector-valued problem has to be constructed
-//const int g_fe_degree_1c = g_fe_degree, g_fe_degree_2c = g_fe_degree, g_fe_degree_3c = g_fe_degree;
+void test_mesh (Triangulation<3> &tria,
+                  const double scale_grid = 1.)
+{
+  const unsigned int dim = 3;
+  std::vector<Point<dim> > points (8);
+
+  // build the mesh layer by layer from points
+
+  // 1. cube cell
+  points[0] = Point<dim> (0,0,0);
+  points[1] = Point<dim> (0,1.,0);
+  points[2] = Point<dim> (0,0,1);
+  points[3] = Point<dim> (0,1.,1);
+  points[4] = Point<dim> (1.,0,0);
+  points[5] = Point<dim> (1.,1.,0);
+  points[6] = Point<dim> (1.,0,1);
+  points[7] = Point<dim> (1.,1.,1);
+
+  // connect the points to cells
+  std::vector<CellData<dim> > cells(1);
+  for (unsigned int i=0; i<1; ++i)
+    {
+      cells[i].vertices[0] = 0+4*i;
+      cells[i].vertices[1] = 4+4*i;
+      cells[i].vertices[2] = 1+4*i;
+      cells[i].vertices[3] = 5+4*i;
+      cells[i].vertices[4] = 2+4*i;
+      cells[i].vertices[5] = 6+4*i;
+      cells[i].vertices[6] = 3+4*i;
+      cells[i].vertices[7] = 7+4*i;
+      cells[i].material_id = 0;
+    }
+  tria.create_triangulation (points, cells, SubCellData());
+}
 
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d=fe_degree+1, int base_fe_degree=fe_degree>
 class Test{
+
+	static const int n_array_elements = VectorizedArray<Number>::n_array_elements;
+
     const bool evaluate_values, evaluate_gradients, evaluate_hessians;
-    const bool integrate_values, integrate_gradients;
 
     debugStream mylog;
-    Triangulation<dim>   triangulation;
-    DoFHandler<dim>      dof_handler;
     UpdateFlags          update_flags;
+
+    //std::vector<Number> fe_unit_values;
+    //std::vector<Number> shape_values_old;
 
 	bool compare_values(int);
 	bool compare_gradients(int);
 	bool compare_hessians(int);
 public:
 	Test() = delete;
-	Test(bool evaluate_values, bool evaluate_gradients, bool evaluate_hessians,
-		bool integrate_values, bool integrate_gradients);
+	Test(bool evaluate_values, bool evaluate_gradients, bool evaluate_hessians);
 	bool run(bool debug);
 };
 
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
 Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::Test(
-		bool evaluate_values, bool evaluate_gradients, bool evaluate_hessians,
-		bool integrate_values, bool integrate_gradients) :
+		bool evaluate_values, bool evaluate_gradients, bool evaluate_hessians) :
 		evaluate_values(evaluate_values), evaluate_gradients(evaluate_gradients),
-		evaluate_hessians(evaluate_hessians), integrate_values(integrate_values),
-		integrate_gradients(integrate_gradients)
+		evaluate_hessians(evaluate_hessians)
 {
-	if (integrate_values == true && evaluate_values == false)
-	{
-		std::cout<<"Error: Must evaluate values before integrating them "<<std::endl;
-		return;
-	}
-
-	if (integrate_gradients == true && evaluate_gradients == false)
-	{
-		std::cout<<"Error: Must evaluate gradients before integrating them "<<std::endl;
-		return;
-	}
-
-	//create_mesh (triangulation);
-	test_mesh(triangulation);
-	//GridGenerator::hyper_cube (triangulation, -1, 1);
-	//  const Point<2> center (1,0);
-	//  const double inner_radius = 0.5, outer_radius = 1.0;
-	//GridGenerator::hyper_shell (triangulation,
-	//                           center, inner_radius, outer_radius,10);
-
-	update_flags = update_JxW_values;
-
-	if (evaluate_values)
-		update_flags |= update_values;
-
-	if (evaluate_gradients)
-		update_flags |= update_gradients;
-
-	if (evaluate_hessians)
-		update_flags |= update_hessians;
 }
 
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
@@ -244,126 +238,190 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 {
 	mylog.debug = debug;
 
-
-    std::cout<<"No of active cells from triangulation = "<<triangulation.n_active_cells()<<std::endl;
-
-	FE_Q<dim> fe_u(fe_degree);
-	FESystem<dim>  fe (fe_u, n_components);
+	//FE_Q<dim> fe_u(fe_degree);
+	//FESystem<dim>  fe (fe_u, n_components);
+	FE_RaviartThomas<dim> fe_rt(fe_degree);
 	QGauss<dim> fe_quad(n_q_points_1d);
-	FEValues<dim> fe_values (fe, fe_quad, update_flags);
+	QGauss<1>   quad_1d(n_q_points_1d);
 
-	dof_handler.initialize(triangulation, fe);
-	const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+	const unsigned int first_selected_component = 0;
+    MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info(quad_1d, fe_rt, fe_rt.component_to_base_index(first_selected_component).first,true);
+
+    const unsigned int   dofs_per_cell = fe_rt.dofs_per_cell;
 	const unsigned int   n_q_points    = fe_quad.size();
+	//fe_unit_values.resize((dofs_per_cell*n_q_points)/n_components);
+	//shape_values_old.resize((dofs_per_cell*n_q_points)/n_components);
+
+
 	Point<dim> p;
 
-#if 0
-	if (fe_degree == 1)
-	    triangulation.refine_global (4-dim);
-	else
-	    triangulation.refine_global (3-dim);
-#endif
 
-	typename DoFHandler<dim>::active_cell_iterator cell, endc = dof_handler.end();
+	const unsigned int   rt_dofs_per_cell = fe_rt.dofs_per_cell;
 
-	mylog<<"output for Jacobians on real cell"<<std::endl;
 
-	cell = dof_handler.begin_active();
-	for (; cell!=endc; ++cell)
+	const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim> *fe_poly =
+			dynamic_cast<const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim>*>(&fe_rt);
+
+	std::vector<std::vector<Tensor<1,dim>>> values(n_q_points);
+	std::vector<Tensor<2,dim>> unused2;
+	std::vector<Tensor<3,dim>> unused3;
+	std::vector<Tensor<4,dim>> unused4;
+	std::vector<Tensor<5,dim>> unused5;
+
+	for (unsigned int q=0; q<n_q_points; ++q)
 	{
-		fe_values.reinit (cell);
+		values[q].resize(fe_poly->poly_space.n());
+		p = fe_quad.point(q);
+		fe_poly->poly_space.compute(p,values[q],unused2,unused3,unused4,unused5);
+	}
 
-		for (unsigned int q=0; q<n_q_points; ++q)
+	mylog<<"Using FEPoly functions "<<std::endl;
+	for (int c=0; c<n_components; c++)
+	{
+		mylog<<"For component number ==========="<<c<<std::endl;
+		for (unsigned int i=0; i<values[0].size(); ++i)
 		{
-			mylog<<"(q) = ("<<","<<q<<") and value = "<<fe_values.JxW(q)<<std::endl;
+			mylog<<std::setw(10)<<i;
+		  for (unsigned int q=0; q<n_q_points; ++q)
+	  	  {
+		  	  p = fe_quad.point(q);
+		  	  mylog<<std::setw(20)<<values[q][i][c];
+	  	  }
+	  	  mylog<<std::endl;
 		}
 	}
+
+	mylog<<std::setw(20)<<"======================="<<std::endl;
+#if 0
+	mylog<<"Using FiniteElement functions "<<std::endl;
+	for (int c=0; c<n_components; c++)
+	{
+			mylog<<"For component number ==========="<<c<<std::endl;
+		for (unsigned int i=0; i<rt_dofs_per_cell; ++i)
+		{
+			mylog<<std::setw(10)<<i;
+		  for (unsigned int q=0; q<n_q_points; ++q)
+	  	  {
+		  	  p = fe_quad.point(q);
+		  	  mylog<<std::setw(20)<<fe_rt.shape_value_component(i,p,c);
+		  	  //std::cout<<"Point is ("<<p[0]<<", "<<p[1]<<")"<<std::endl;
+
+	  	  }
+	  	  mylog<<std::endl;
+		}
+	}
+#endif
+
+	//Evaluate tensor product of ShapeInfo results and store them lexicographically.
+	//   Put results component wise one after the other
+	//   Tensor product has to be calculated ourself (no existing function
+
+	//Tensor product for evaluation of values = N3XN2XN1 where N1,N2,N3 are 1-d matrices as stored in shapeInfo
+
+	unsigned int z_size = 0;
+	unsigned int y_size = 0;
+	unsigned int x_size = 0;
+
+	Number temp_val = 0;
+	const int x_dir=0;
+	const int y_dir=1;
+	const int z_dir=2;
+
+	for (int c=0; c<n_components; c++)
+	{
+		if (c == 0)
+		{
+			x_size = (fe_degree+1)*n_q_points_1d;
+			y_size = fe_degree*n_q_points_1d;
+		}
+		else
+		{
+			x_size = fe_degree*n_q_points_1d;
+			y_size = (fe_degree+1)*n_q_points_1d;
+		}
+
+		for (unsigned int i=0; i<y_size; ++i)
+		{
+			mylog<<std::endl;
+			temp_val = shape_info.shape_values_vec[c][y_dir][i][0];
+			for (unsigned int j=0; j<x_size; ++j)
+			{
+				mylog<<std::setw(10)<<temp_val*shape_info.shape_values_vec[c][x_dir][j][0];
+			}
+		}
+	}
+
+
+
+	//Remark: It should be possible to compare ShapeInfo evaluations against FEValues for FE_Q elements
+	//by following the below algo. I am not going to implement this now as it seems unnecessary because
+	// expr4 UT case is already working
+	//Focus instead on Raviart Thomas element using this knowledge
 
 	if (evaluate_values)
 	{
-		mylog<<"output for evaluate_values on real cell"<<std::endl;
+		//Steps for primitive FEs
+		//1. Pre-calculate a mapping from (global basis function number) to (local=component wise basis function number)
+		//   using fe.system_to_component_index()
+		//2. Evaluate global shape function values/gradients/hessians for each component // alternatively find out non-zero indexes and
+		//   only calculate there
+		//   using fe.shape_value_component()
+		//3. Store the calculated result component wise in order of local basis function number
 
-		cell = dof_handler.begin_active();
-		for (; cell!=endc; ++cell)
-		{
-			fe_values.reinit (cell);
+		//For comparison ==>
+		//1. Find out relation of local basis numbering to lexicographic numbering
+		//   using get_poly_space_numbering_inverse()
+		// 2. Evaluate tensor product of ShapeInfo results and store them lexicographically, each component has same results.
+		//   Put results component wise one after the other
+		//   Tensor product has to be calculated ourself (no existing function)
+		// 3. compare the ShapeInfo results which are lexicographiclaly ordered and put component wise with the previously
+		//  evaluated results
 
-			for (int c=0; c<n_components; c++)
-			{
-				mylog<<"Result for component ("<<c<<")"<<std::endl;
-
-				for (unsigned int q=0; q<n_q_points; ++q)
-				{
-	    		  for (unsigned int i=0; i<dofs_per_cell; ++i)
-	    		  {
-	    			  mylog<<"(i,q) = ("<<i<<","<<q<<") and value = "<<fe_values.shape_value_component(i,q,c)<<std::endl;
-	    		  }
-				}
-			}
-		}
 #if 0
+
 		mylog<<"output for evaluate_values on unit cell"<<std::endl;
 
-		for (int c=0; c<n_components; c++)
-		{
-			mylog<<"Result for component ("<<c<<")"<<std::endl;
+			//mylog<<"Result for component ("<<c<<")"<<std::endl;
 
-			for (unsigned int q=0; q<n_q_points; ++q)
+			mylog<<"Using FiniteElement functions "<<std::endl;
+			for (unsigned int i=0; i<dofs_per_cell; ++i)
 			{
-			  p = fe_quad.point(q);
-			  std::cout<<"Point is ("<<p[0]<<", "<<p[1]<<")"<<std::endl;
-	    	  for (unsigned int i=0; i<dofs_per_cell; ++i)
+			  for (unsigned int q=0; q<1/*n_q_points*/; ++q)
 	    	  {
-	    		  mylog<<"(i,q) = ("<<i<<","<<q<<") and value = "<<fe.shape_value_component(i,p,c)<<std::endl;
+				  p = fe_quad.point(q);
+				  //std::cout<<"Point is ("<<p[0]<<", "<<p[1]<<")"<<std::endl;
+				  for (int c=0; c<n_components; c++)
+				  {
+					  mylog<<"(c,i,q) = ("<<c<<","<<i<<","<<q<<") and value = "<<fe.shape_value_component(i,p,c)<<std::endl;
+				  }
 	    	  }
 			}
-		}
+
+			mylog<<"using Old ShapeInfo functions "<<std::endl;
+			unsigned int shape_info_size = shape_info_old_impl.shape_values.size();
+			unsigned int n_dof_1d = shape_info_size/n_q_points_1d;
+			for (unsigned int i=0; i<n_dof_1d; ++i)
+			{
+				for (unsigned int q=0; q<n_q_points_1d; ++q)
+				{
+					mylog<<"(i,q) = ("<<i<<","<<q<<") and value = "<<
+								shape_info_old_impl.shape_values[i*n_q_points_1d+q][0]<<std::endl;
+				}
+			}
+
+			mylog<<"using New ShapeInfo functions "<<std::endl;
+			for (unsigned int i=0; i<n_dof_1d; ++i)
+			{
+				for (unsigned int q=0; q<n_q_points_1d; ++q)
+				{
+					mylog<<"(i,q) = ("<<i<<","<<q<<") and value = "<<
+								shape_info_new_impl.shape_values_vec[c][0][i*n_q_points_1d+q][0]<<std::endl;
+				}
+			}
 #endif
-	}
-
-	if (evaluate_gradients)
-	{
-		mylog<<"output for evaluate_gradients"<<std::endl;
-
-		cell = dof_handler.begin_active();
-		for (; cell!=endc; ++cell)
-		{
-			fe_values.reinit (cell);
-
-			for (int c=0; c<n_components; c++)
-			{
-				mylog<<"Result for component ("<<c<<")"<<std::endl;
-
-				for (unsigned int q=0; q<n_q_points; ++q)
-	    		  for (unsigned int i=0; i<dofs_per_cell; ++i)
-	    		  {
-	    			  mylog<<"(i,q) = ("<<i<<","<<q<<") and gradient = "<<fe_values.shape_grad_component(i,q,c)<<std::endl;
-	    		  }
-			}
 		}
-	}
 
-	if (evaluate_hessians)
-	{
-		mylog<<"output for evaluate_hessians"<<std::endl;
 
-		cell = dof_handler.begin_active();
-		for (; cell!=endc; ++cell)
-		{
-			fe_values.reinit (cell);
-
-			for (int c=0; c<n_components; c++)
-			{
-				mylog<<"Result for component ("<<c<<")"<<std::endl;
-
-				for (unsigned int q=0; q<n_q_points; ++q)
-	    		  for (unsigned int i=0; i<dofs_per_cell; ++i)
-	    		  {
-	    			  mylog<<"(i,q) = ("<<i<<","<<q<<") and hessian = "<<fe_values.shape_hessian_component(i,q,c)<<std::endl;
-	    		  }
-			}
-		}
-	}
 
 	return true;
 }
@@ -386,17 +444,13 @@ int main(int argc, char *argv[])
 	const bool evaluate_gradients = false;
 	const bool evaluate_hessians = false;
 
-	const bool integrate_values = false;
-	const bool integrate_gradients = false;
-
 
 	//note: This test only suppotrs n_components = dim since thats how FEEvaluationGen is designed
 
 	//n_comp, dim, fe_deg, q_1d, base_degree
 
 
-    res = Test<double,1,2,1>(evaluate_values,evaluate_gradients,evaluate_hessians,
-			integrate_values,integrate_gradients).run(debug);
+    res = Test<double,2,2,1>(evaluate_values,evaluate_gradients,evaluate_hessians).run(debug);
 
     //2-D tests
 #if 0
