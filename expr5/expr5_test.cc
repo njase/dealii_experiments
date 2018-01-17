@@ -5,6 +5,9 @@
 // 			 - for FE_Q elements, for all components
 //			 - compare values, gradients and hessians
 //update: So this experiment is currently stopped here, continue with RT in expr6 instead
+//however, i've added a small sample to evaluate values using fe_poly and using tensor product from
+// shape info. The results can be manually verified using ./expr5_test --debug and are identical
+
 /////////////////
 
 #include "tests.h"
@@ -134,19 +137,18 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 {
 	mylog.debug = debug;
 
-	FE_Q<dim> fe_u(fe_degree);
-	FESystem<dim>  fe (fe_u, n_components);
+	//FE_Q<dim> fe_u(fe_degree);
+	//FESystem<dim>  fe (fe_u, n_components);
+	FE_Q<dim> fe(fe_degree); //For debugging
 	QGauss<dim> fe_quad(n_q_points_1d);
 	QGauss<1>   quad_1d(n_q_points_1d);
 
 	const unsigned int first_selected_component = 0;
-    MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info_old_impl(quad_1d, fe, fe.component_to_base_index(first_selected_component).first);
+	MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info_old(quad_1d, fe, fe.component_to_base_index(first_selected_component).first);
     MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info_new_impl(quad_1d, fe, fe.component_to_base_index(first_selected_component).first,true);
 
-    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    const unsigned int   fe_dofs_per_cell = fe.dofs_per_cell;
 	const unsigned int   n_q_points    = fe_quad.size();
-	//fe_unit_values.resize((dofs_per_cell*n_q_points)/n_components);
-	//shape_values_old.resize((dofs_per_cell*n_q_points)/n_components);
 
 
 	Point<dim> p;
@@ -175,38 +177,112 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 		// 3. compare the ShapeInfo results which are lexicographiclaly ordered and put component wise with the previously
 		//  evaluated results
 
-#if 0
 
-		mylog<<"output for evaluate_values on unit cell"<<std::endl;
+		const FE_Poly<TensorProductPolynomials<dim>,dim,dim> *fe_poly =
+				dynamic_cast<const FE_Poly<TensorProductPolynomials<dim>,dim,dim>*>(&fe);
 
-			//mylog<<"Result for component ("<<c<<")"<<std::endl;
+		if (fe_dofs_per_cell != fe_poly->poly_space.n())
+		{
+			std::cout<<"Conceptual bug..Error " <<std::endl;
+			return false;
+		}
 
-			mylog<<"Using FiniteElement functions "<<std::endl;
-			for (unsigned int i=0; i<dofs_per_cell; ++i)
+		std::vector<std::vector<double>> values(n_q_points);
+		std::vector<Tensor<1,dim>> unused2_1;
+		std::vector<Tensor<2,dim>> unused3_1;
+		std::vector<Tensor<3,dim>> unused4_1;
+		std::vector<Tensor<4,dim>> unused5_1;
+
+		//Evaluate each basis function on every quad point
+		for (unsigned int q=0; q<n_q_points; ++q)
+		{
+			//size = no. of dofs = no of tensor product polynomials = total no of basis functions
+			values[q].resize(fe_dofs_per_cell);
+			p = fe_quad.point(q);
+			fe_poly->poly_space.compute(p,values[q],unused2_1,unused3_1,unused4_1,unused5_1);
+		}
+
+		mylog<<"Using FEPoly functions "<<std::endl;
+		std::vector<unsigned int> numbering = fe_poly->get_poly_space_numbering_inverse();
+
+		//for (int c=0; c<n_components; c++)
+		//{
+		//	mylog<<"For component number ==========="<<c<<std::endl;
+			for (unsigned int i=0; i<fe_dofs_per_cell; ++i)
 			{
-			  for (unsigned int q=0; q<1/*n_q_points*/; ++q)
-	    	  {
-				  p = fe_quad.point(q);
-				  //std::cout<<"Point is ("<<p[0]<<", "<<p[1]<<")"<<std::endl;
-				  for (int c=0; c<n_components; c++)
-				  {
-					  mylog<<"(c,i,q) = ("<<c<<","<<i<<","<<q<<") and value = "<<fe.shape_value_component(i,p,c)<<std::endl;
-				  }
-	    	  }
+				mylog<<std::setw(10)<<i;
+			  for (unsigned int q=0; q<n_q_points; ++q)
+		  	  {
+			  	  mylog<<std::setw(20)<<values[q][numbering[i]];
+		  	  }
+		  	  mylog<<std::endl;
 			}
+		//}
 
-			mylog<<"using Old ShapeInfo functions "<<std::endl;
-			unsigned int shape_info_size = shape_info_old_impl.shape_values.size();
-			unsigned int n_dof_1d = shape_info_size/n_q_points_1d;
-			for (unsigned int i=0; i<n_dof_1d; ++i)
+		//--------------
+
+		//Tensor product for evaluation of values = N2XN1 where N1,N2 are 1-d matrices as stored in shapeInfo
+			//This is here done only for 2-D tensor product. 3-D can be similarly created
+
+		mylog<<"Using ShapeInfo functions "<<std::endl;
+		double xShapeMatrix[fe_degree+1][n_q_points_1d];
+		double yShapeMatrix[fe_degree+1][n_q_points_1d];
+		double zShapeMatrix[fe_degree+1][n_q_points_1d];
+
+		//Fill n1, N2 matrices
+		for (int i=0; i<fe_degree+1; i++)
+		{
+			for (int j=0; j<n_q_points_1d; j++)
 			{
-				for (unsigned int q=0; q<n_q_points_1d; ++q)
+				xShapeMatrix[i][j] = shape_info_old.shape_values[i*n_q_points_1d+j][0];
+				yShapeMatrix[i][j] = xShapeMatrix[i][j];
+				zShapeMatrix[i][j] = xShapeMatrix[i][j];
+				mylog<<std::setw(20)<<xShapeMatrix[i][j];
+			}
+			mylog<<std::endl;
+		}
+
+
+		//Calculate and store their tensor product
+		double outputMatrix[fe_dofs_per_cell][n_q_points];
+		int row = 0, col = 0;
+		int yrows = fe_degree+1, ycols = n_q_points_1d;
+		int xrows = fe_degree+1, xcols = n_q_points_1d;
+
+		double temp;
+
+		for (int yi=0; yi<yrows; yi++)
+		{
+			for (int yj=0; yj<ycols; yj++)
+			{
+				temp = yShapeMatrix[yi][yj];
+				for (int xi=0; xi<xrows; xi++)
 				{
-					mylog<<"(i,q) = ("<<i<<","<<q<<") and value = "<<
-								shape_info_old_impl.shape_values[i*n_q_points_1d+q][0]<<std::endl;
+					for (int xj=0; xj<xcols; xj++)
+					{
+						col = yj*xcols+xj;
+						row = yi*xrows+xi;
+						outputMatrix[row][col] = temp * xShapeMatrix[xi][xj];
+					}
 				}
 			}
+		}
 
+		mylog<<"Using Tensor Product of ShapeInfo "<<std::endl;
+		//for (int c=0; c<n_components; c++)
+		//{
+		//	mylog<<"For component number ==========="<<c<<std::endl;
+			for (unsigned int i=0; i<fe_dofs_per_cell; ++i)
+			{
+				mylog<<std::setw(10)<<i;
+			  for (unsigned int q=0; q<n_q_points; ++q)
+		  	  {
+			  	  mylog<<std::setw(20)<<outputMatrix[i][q];
+		  	  }
+		  	  mylog<<std::endl;
+			}
+
+#if 0
 			mylog<<"using New ShapeInfo functions "<<std::endl;
 			for (unsigned int i=0; i<n_dof_1d; ++i)
 			{
