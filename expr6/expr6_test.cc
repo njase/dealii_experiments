@@ -4,6 +4,9 @@
 //			 - Using FiniteElement functions and ShapeInfo functions
 // 			 - for RT elements, for all components
 //			 - compare values, gradients and hessians
+//Remark: This experiment stopped after finding that the basis transformation matrix evaluation
+// using generalized support points is not feasible.
+// This code is now kept for reference reasons
 /////////////////
 
 #include "tests.h"
@@ -71,111 +74,6 @@ public:
     }
 };
 
-void test_mesh (Triangulation<2> &tria,
-                  const double scale_grid = 1.)
-{
-  const unsigned int dim = 2;
-
-#if 0
-  std::vector<Point<dim> > points (12);
-
-  // build the mesh layer by layer from points
-
-  // 1. cube cell
-  points[0] = Point<dim> (0, 0);
-  points[1] = Point<dim> (0, 1);
-  points[2] = Point<dim> (1,0);
-  points[3] = Point<dim> (1,1);
-
-  // 2. rectangular cell
-  points[4] = Point<dim> (3., 0);
-  points[5] = Point<dim> (3., 1);
-
-  // 3. parallelogram cell
-  points[6] = Point<dim> (5., 1.);
-  points[7] = Point<dim> (5., 2.);
-
-  // almost square cell (but trapezoidal by
-  // 1e-8)
-  points[8] = Point<dim> (6., 1.);
-  points[9] = Point<dim> (6., 2.+1e-8);
-
-  // apparently trapezoidal cell
-  points[10] = Point<dim> (7., 1.4);
-  points[11] = Point<dim> (7.5, numbers::PI);
-
-  if (scale_grid != 1.)
-    for (unsigned int i=0; i<points.size(); ++i)
-      points[i] *= scale_grid;
-
-
-  // connect the points to cells
-  std::vector<CellData<dim> > cells(5);
-  for (unsigned int i=0; i<5; ++i)
-    {
-      cells[i].vertices[0] = 0+2*i;
-      cells[i].vertices[1] = 2+2*i;
-      cells[i].vertices[2] = 1+2*i;
-      cells[i].vertices[3] = 3+2*i;
-      cells[i].material_id = 0;
-    }
-#endif
-
-  std::vector<Point<dim> > points (4);
-
-  // almost square cell (but trapezoidal by
-  // 1e-8)
-  points[0] = Point<dim> (6., 1.);
-  points[1] = Point<dim> (6., 2.+1e-8);
-
-  // apparently trapezoidal cell
-  points[2] = Point<dim> (7., 1.4);
-  points[3] = Point<dim> (7.5, numbers::PI);
-
-
-  std::vector<CellData<dim> > cells(1);
-  cells[0].vertices[0] = 0;
-  cells[0].vertices[1] = 2;
-  cells[0].vertices[2] = 1;
-  cells[0].vertices[3] = 3;
-
-  tria.create_triangulation (points, cells, SubCellData());
-}
-
-void test_mesh (Triangulation<3> &tria,
-                  const double scale_grid = 1.)
-{
-  const unsigned int dim = 3;
-  std::vector<Point<dim> > points (8);
-
-  // build the mesh layer by layer from points
-
-  // 1. cube cell
-  points[0] = Point<dim> (0,0,0);
-  points[1] = Point<dim> (0,1.,0);
-  points[2] = Point<dim> (0,0,1);
-  points[3] = Point<dim> (0,1.,1);
-  points[4] = Point<dim> (1.,0,0);
-  points[5] = Point<dim> (1.,1.,0);
-  points[6] = Point<dim> (1.,0,1);
-  points[7] = Point<dim> (1.,1.,1);
-
-  // connect the points to cells
-  std::vector<CellData<dim> > cells(1);
-  for (unsigned int i=0; i<1; ++i)
-    {
-      cells[i].vertices[0] = 0+4*i;
-      cells[i].vertices[1] = 4+4*i;
-      cells[i].vertices[2] = 1+4*i;
-      cells[i].vertices[3] = 5+4*i;
-      cells[i].vertices[4] = 2+4*i;
-      cells[i].vertices[5] = 6+4*i;
-      cells[i].vertices[6] = 3+4*i;
-      cells[i].vertices[7] = 7+4*i;
-      cells[i].material_id = 0;
-    }
-  tria.create_triangulation (points, cells, SubCellData());
-}
 
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d=fe_degree+2, int base_fe_degree=fe_degree>
 class Test{
@@ -187,12 +85,6 @@ class Test{
     debugStream mylog;
     UpdateFlags          update_flags;
 
-    //std::vector<Number> fe_unit_values;
-    //std::vector<Number> shape_values_old;
-
-	bool compare_values(int);
-	bool compare_gradients(int);
-	bool compare_hessians(int);
 	bool reference_test(
 			FE_RaviartThomas<dim> &fe_rt,
 			std::vector<Point<dim,Number>> &points,
@@ -213,34 +105,11 @@ Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::Test(
 {
 }
 
-template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
-bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::compare_values(int id)
-{
-	bool res_values = true;
 
-	return res_values;
-}
-
-
-
-template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
-bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::compare_gradients(int id)
-{
-	bool res_gradients = true;
-
-	return res_gradients;
-}
-
-
-template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
-bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::compare_hessians(int id)
-{
-	bool res_hessians = true;
-
-	return res_hessians;
-
-}
-
+//This is just to confirm the understanding that rt.shape_value_component actually evaluates
+// in 2 stages:
+// 1. evaluate in raw basis using underlying poly space compute function
+// 2. Convert results to real basis using transformation matrix / node matrix
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
 bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::reference_test(
 		FE_RaviartThomas<dim> &fe_rt,
@@ -311,9 +180,6 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::actua
 
 	FE_RaviartThomas<dim> fe_rt(fe_degree);
 	QGauss<1>   quad_1d(n_q_points_1d);
-	//std::cout<<"1D quad points are "<<std::endl;
-	//for (auto p:quad_1d.get_points())
-	//	std::cout<<p<<std::endl;
 
 	const unsigned int first_selected_component = 0;
 	    MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info(quad_1d, fe_rt, fe_rt.component_to_base_index(first_selected_component).first,true);
@@ -603,294 +469,14 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
     for (int i=0; i<n_dofs; i++)
     	dofs_actual[i] = std::rand()/static_cast<Number>(RAND_MAX);
 
-#if 0
+
     res = actual_test(fe_quad,dofs_actual);
     std::cout<<"Actual result = "<<(res == true?"Pass":"Fail")<<std::endl;
 
-
+#if 0
     res = reference_test(fe_rt,points,dofs_actual);
     std::cout<<"Reference result = "<<(res == true?"Pass":"Fail")<<std::endl;
 #endif
-
-
-
-//This is inverting to find out C matrix -- inversion is unstable
-
-    //Find no. of shape functions
-	unsigned int n_points = n_dofs;
-
-	if ((n_dofs != (fe_degree+2)*(fe_degree+1)*dim) && (n_dofs_per_comp != (fe_degree+2)*(fe_degree+1)))
-	{
-		std::cout<<"Conceptual bug..Error " <<std::endl;
-		return false;
-	}
-
-
-	//We choose points as tensor product of Gauss quadrature
-	//testing for deg=1m so 12 points
-	//QGauss<1>   quad_x(4);
-	//QGauss<1>   quad_y(3);
-
-	QGauss<1>   quad_x(4);
-	QGauss<1>   quad_y(4);
-
-	std::vector<Point<dim,Number>> q_points(n_points);
-	int p = 0;
-
-	for (auto y:quad_y.get_points())
-	{
-		for (auto x:quad_x.get_points())
-		{
-			if (p < n_points)
-			{
-				q_points[p][0] = x[0];
-				q_points[p][1] = y[0];
-				std::cout<<"  Point = "<<q_points[p];
-			}
-			p++;
-		}
-	}
-
-	std::cout<<std::endl;
-	std::cout<<std::endl;
-
-
-	int c = 0;
-
-	FullMatrix<Number> phi_matrix(n_dofs,n_dofs);
-	FullMatrix<Number> phi_hat_matrix(n_dofs,n_dofs);
-	FullMatrix<Number> C_matrix(n_dofs,n_dofs);
-
-	//lets generate phi matrix
-	//Evaluate all basis functions on these points, for only one vector component
-	for (int i=0;i<n_dofs;i++)
-	{
-		for (int q=0; q<q_points.size();q++)
-		{
-			phi_matrix(i,q) = fe_rt.shape_value_component(i,q_points[q],c);
-		}
-	}
-
-
-	//Lets evaluate phi_hat matrix for c = 0 FIXME : This is only for 2 dim
-	const FE_Q<1> fe1(fe_degree+1);
-	const FE_Q<1> fe2(fe_degree);
-
-	int k = 0;
-	for (int q=0; q<q_points.size();q++)
-	{
-		k = 0;
-		Point<1> px(q_points[q][0]);
-		Point<1> py(q_points[q][1]);
-
-		for (int i=0; i<fe1.dofs_per_cell; i++)
-		{
-			for (int j=0; j<fe2.dofs_per_cell; j++)
-			{
-				double v1 = fe1.shape_value(i,px);
-				double v2 = fe2.shape_value(j,py);
-				double vres = v1*v2;
-
-				phi_hat_matrix(k++,q) = vres;
-
-			//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[q]<<") = ("<<
-			//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
-			}
-		}
-	}
-
-
-	//Work for c = 1
-	c = 1;
-	QGauss<1>   quad_xx(6);
-	QGauss<1>   quad_yy(6);
-	p = 0;
-
-	for (auto y:quad_yy.get_points())
-	{
-		for (auto x:quad_xx.get_points())
-		{
-			if (p < n_points)
-			{
-				q_points[p][0] = x[0];
-				q_points[p][1] = y[0];
-				std::cout<<"  Point = "<<q_points[p];
-			}
-			p++;
-		}
-	}
-
-	//Evaluate all basis functions on new points, for only one vector component
-	for (int i=0;i<n_dofs;i++)
-	{
-		for (int q=0; q<q_points.size();q++)
-		{
-			phi_matrix(i,q) += fe_rt.shape_value_component(i,q_points[q],c);
-		}
-	}
-
-	//Lets evaluate phi_hat matrix for c = 1, on some different points
-	for (int q=0; q<q_points.size();q++)
-	{
-		k = n_dofs_per_comp;
-		Point<1> px(q_points[q][0]);
-		Point<1> py(q_points[q][1]);
-
-		for (int i=0; i<fe2.dofs_per_cell; i++)
-		{
-			for (int j=0; j<fe1.dofs_per_cell; j++)
-			{
-				double v1 = fe2.shape_value(i,px);
-				double v2 = fe1.shape_value(j,py);
-				double vres = v1*v2;
-
-				phi_hat_matrix(k++,q) = vres;
-
-			//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[q]<<") = ("<<
-			//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
-			}
-		}
-	}
-
-
-
-#if 0
-	//now here is an alternative. i choose just one point, and evaluate
-	//all the basis functions for all compnents in this one point
-	//problem: This will be a non-square matrix, so inverse cant be correctly evaluated
-
-	FullMatrix<Number> phi_matrix(n_dofs,dim);
-	FullMatrix<Number> phi_hat_matrix(n_dofs,dim);
-	FullMatrix<Number> C_matrix(n_dofs,n_dofs);
-
-
-	Point<dim> p(0.0694318,0.887298); //This is chosen from above commented code
-	Point<1> px(0.0694318);
-	Point<1> py(0.887298);
-
-	//lets generate phi matrix
-	//Evaluate all basis functions on this point, for all vector components
-	for (int i=0;i<n_dofs;i++)
-	{
-		for (int c=0;c<n_components;c++)
-		{
-			phi_matrix(i,c) = fe_rt.shape_value_component(i,p,c);
-		}
-	}
-
-	//Lets evaluate phi_hat matrix FIXME : This is only for 2 dim
-	int c = 0,k=0;
-	for (int i=0; i<fe1.dofs_per_cell; i++)
-	{
-		for (int j=0; j<fe2.dofs_per_cell; j++)
-		{
-			double v1 = fe1.shape_value(i,Point<1>(px));
-			double v2 = fe2.shape_value(j,Point<1>(py));
-			double vres = v1*v2;
-
-			phi_hat_matrix(k++,c) = vres;
-
-		//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[k]<<") = ("<<
-		//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
-		}
-	}
-
-	c = 1,k=fe1.dofs_per_cell*fe2.dofs_per_cell;
-	for (int i=0; i<fe2.dofs_per_cell; i++)
-	{
-		for (int j=0; j<fe1.dofs_per_cell; j++)
-		{
-			double v1 = fe2.shape_value(i,Point<1>(px));
-			double v2 = fe1.shape_value(j,Point<1>(py));
-			double vres = v1*v2;
-
-			phi_hat_matrix(k++,c) = vres;
-
-		//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[k]<<") = ("<<
-		//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
-		}
-	}
-#endif
-
-
-	//print
-	for (unsigned int i=0; i<n_dofs; i++)
-	{
-		for (unsigned int j=0; j<n_dofs; j++)
-		{
-			std::cout <<std::setw(15)<<phi_matrix(i,j);
-		}
-		std::cout<<std::endl;
-	}
-
-	std::cout<<std::endl<<std::endl;
-
-
-	for (unsigned int i=0; i<n_dofs; i++)
-	{
-		for (unsigned int j=0; j<n_dofs; j++)
-		{
-			std::cout <<std::setw(15)<<phi_hat_matrix(i,j);
-		}
-		std::cout<<std::endl;
-	}
-
-
-	std::cout<<std::endl<<std::endl;
-
-	phi_hat_matrix.gauss_jordan();
-
-	phi_matrix.mmult(C_matrix,phi_hat_matrix);
-
-
-	for (unsigned int i=0; i<n_dofs; i++)
-	{
-		for (unsigned int j=0; j<n_dofs; j++)
-		{
-			std::cout <<std::setw(15)<<C_matrix(i,j);
-		}
-		std::cout<<std::endl;
-	}
-
-
-	std::cout<<std::endl<<std::endl;
-
-
-	//phi_matrix.mmult(C_matrix,phi_hat_matrix);
-
-
-	//Compare C_matrix with fe_poly->inverse_node_matrix
-
-
-	/////////////////Debug over
-
-	//Remark: It should be possible to compare ShapeInfo evaluations against FEValues for FE_Q elements
-	//by following the below algo. I am not going to implement this now as it seems unnecessary because
-	// expr4 UT case is already working
-	//Focus instead on Raviart Thomas element using this knowledge
-
-	if (evaluate_values)
-	{
-		//Steps for primitive FEs
-		//1. Pre-calculate a mapping from (global basis function number) to (local=component wise basis function number)
-		//   using fe.system_to_component_index()
-		//2. Evaluate global shape function values/gradients/hessians for each component // alternatively find out non-zero indexes and
-		//   only calculate there
-		//   using fe.shape_value_component()
-		//3. Store the calculated result component wise in order of local basis function number
-
-		//For comparison ==>
-		//1. Find out relation of local basis numbering to lexicographic numbering
-		//   using get_poly_space_numbering_inverse()
-		// 2. Evaluate tensor product of ShapeInfo results and store them lexicographically, each component has same results.
-		//   Put results component wise one after the other
-		//   Tensor product has to be calculated ourself (no existing function)
-		// 3. compare the ShapeInfo results which are lexicographiclaly ordered and put component wise with the previously
-		//  evaluated results
-
-
-		}
-
 
 	std::cout<<std::endl;
 
