@@ -8,10 +8,10 @@
 // components, the resulting matrix is stable and invertible.
 //HOWVER: dealii inverson results are incorrect!
 // I checked with matlab
-//So this experiment just stops here after identifying the coordinate
-// transformation matrices.
-// These will be hardcoded for several degress due to the dealii bug!
+// After identifying the coordinate transformation matrices,
+// these will be hardcoded for several degress due to the dealii bug!
 /////////////////
+
 
 #include <deal.II/matrix_free/matrix_free.h>
 #include <deal.II/matrix_free/fe_evaluation.h>
@@ -43,6 +43,45 @@ using namespace dealii;
 using namespace dealii::internal;
 using namespace std;
 
+
+const double RTbasisTp_2_1[12][12] = {
+		{3.688745294522960, 3.688698417739943, 2.688731866219314 ,2.688677954691229,
+		 2.438744373735972, 2.438673018332338, -2.727004161948571, -8.055992644745857,
+		 -3.719523632898927, -2.575390277750557, 13.214999134885147, 0.365811850788305},
+		 {3.086195172087173 ,  6.550358689288259 ,  4.818251285221777 ,  4.818329790563439 ,
+		  5.251267675455892 ,  4.385278240035404, -4.955912901394186, -24.134806016518269,
+		  -8.528221198532265,  -4.443853018761729,  47.716408709995449,   5.271485424047569},
+		{-2.321653073420748, -2.321583998855203, -1.321635395521298, -1.321555427042767,
+		 -2.571651071077213, -2.571555789792910, 2.319398310733959,  2.004084509797394,
+		 2.260587957454845, 2.241976860328577, -8.855871140956879, 0.174781426321715},
+		 {-2.782075365306810, -2.781963143381290, -4.514094172744080, -1.049879585276358,
+		  -2.349055554368533, -3.214945252635516, 2.615872393362224, -20.540133458096534,
+		  -1.697300350177102,  2.605661406880245, -21.967637538909912, -1.971524186665192},
+		  {2.592302530189045, 2.592274433583952,  2.592294550384395,  2.592260976671241,
+			2.592302673263475, 2.592257398413494, -1.618354659294710, -6.247031801380217,
+		   -3.544195846538059, -1.519955282099545, 7.558230282738805, -0.892738583381288},
+		   {13.106823971960694, 13.106469337362796, 13.106727236765437, 13.106328266789205,
+			13.106808487442322, 13.106316825607792, -14.928340289858170,-25.654511229135096,
+			-15.083336541894823,-10.697132536442950, 81.964068967849016, 4.720074991928414},
+			{0.670345053018536, 0.670335718605202, 0.670342258759774, 0.670330918743275,
+			0.670345312624704, 0.670329049113207, -0.695101419114508, -3.143738654209301,
+			-1.587432346539572, -0.648148790409323, 3.443830498959869, -0.322217432025354},
+			{-2.327534593641758, -2.327473459183238, -2.327517794212326, -2.327449288568459,
+			-2.327531837858260, -2.327446638140827, 2.339844674454071,  2.321756316814572,
+			3.092028058250435, 2.205773913534358, -13.023093588650227, -1.386479660286568},
+			{-0.432371724047698, -0.432399128796533, -0.432377111050300, -0.432408949243836,
+			1.067628073506057, 1.067598665715195, 0.482284876634367, 7.436145572923124,
+			1.777538653695956, 0.392393874702975, -5.177840638905764, -0.645085904398002},
+			{-2.327927327249199, -2.327895103720948, -2.327917691320181, -2.327878558076918,
+			-2.327928208513185, -2.327872153371572,2.388135411543772, 10.775004612281919,
+			5.450231271563098, 2.227084867889062, -11.820772463455796, 1.110464304685593},
+			{-2.456214245932642, -2.456336154486053, -2.456235158198979, -2.456385111145210,
+			-5.054298089176882,  0.141729230817873,2.683952090097591, 34.411464667646214,
+			8.593633295502514, 2.236989879922476,-28.307372552808374, -3.452056165609974},
+			{-2.389480209210888, -2.389509639004245, -2.389481949619949, -2.389528895495459,
+			-2.389485988533124, -2.389504124177620,2.382965010125190,  1.475021407939494,
+			-0.384207728784531,  2.033448050031438, -47.567886173725128, -4.607211145572364}
+};
 
 class debugStream{
 
@@ -76,111 +115,7 @@ public:
     }
 };
 
-void test_mesh (Triangulation<2> &tria,
-                  const double scale_grid = 1.)
-{
-  const unsigned int dim = 2;
 
-#if 0
-  std::vector<Point<dim> > points (12);
-
-  // build the mesh layer by layer from points
-
-  // 1. cube cell
-  points[0] = Point<dim> (0, 0);
-  points[1] = Point<dim> (0, 1);
-  points[2] = Point<dim> (1,0);
-  points[3] = Point<dim> (1,1);
-
-  // 2. rectangular cell
-  points[4] = Point<dim> (3., 0);
-  points[5] = Point<dim> (3., 1);
-
-  // 3. parallelogram cell
-  points[6] = Point<dim> (5., 1.);
-  points[7] = Point<dim> (5., 2.);
-
-  // almost square cell (but trapezoidal by
-  // 1e-8)
-  points[8] = Point<dim> (6., 1.);
-  points[9] = Point<dim> (6., 2.+1e-8);
-
-  // apparently trapezoidal cell
-  points[10] = Point<dim> (7., 1.4);
-  points[11] = Point<dim> (7.5, numbers::PI);
-
-  if (scale_grid != 1.)
-    for (unsigned int i=0; i<points.size(); ++i)
-      points[i] *= scale_grid;
-
-
-  // connect the points to cells
-  std::vector<CellData<dim> > cells(5);
-  for (unsigned int i=0; i<5; ++i)
-    {
-      cells[i].vertices[0] = 0+2*i;
-      cells[i].vertices[1] = 2+2*i;
-      cells[i].vertices[2] = 1+2*i;
-      cells[i].vertices[3] = 3+2*i;
-      cells[i].material_id = 0;
-    }
-#endif
-
-  std::vector<Point<dim> > points (4);
-
-  // almost square cell (but trapezoidal by
-  // 1e-8)
-  points[0] = Point<dim> (6., 1.);
-  points[1] = Point<dim> (6., 2.+1e-8);
-
-  // apparently trapezoidal cell
-  points[2] = Point<dim> (7., 1.4);
-  points[3] = Point<dim> (7.5, numbers::PI);
-
-
-  std::vector<CellData<dim> > cells(1);
-  cells[0].vertices[0] = 0;
-  cells[0].vertices[1] = 2;
-  cells[0].vertices[2] = 1;
-  cells[0].vertices[3] = 3;
-
-  tria.create_triangulation (points, cells, SubCellData());
-}
-
-void test_mesh (Triangulation<3> &tria,
-                  const double scale_grid = 1.)
-{
-  const unsigned int dim = 3;
-  std::vector<Point<dim> > points (8);
-
-  // build the mesh layer by layer from points
-
-  // 1. cube cell
-  points[0] = Point<dim> (0,0,0);
-  points[1] = Point<dim> (0,1.,0);
-  points[2] = Point<dim> (0,0,1);
-  points[3] = Point<dim> (0,1.,1);
-  points[4] = Point<dim> (1.,0,0);
-  points[5] = Point<dim> (1.,1.,0);
-  points[6] = Point<dim> (1.,0,1);
-  points[7] = Point<dim> (1.,1.,1);
-
-  // connect the points to cells
-  std::vector<CellData<dim> > cells(1);
-  for (unsigned int i=0; i<1; ++i)
-    {
-      cells[i].vertices[0] = 0+4*i;
-      cells[i].vertices[1] = 4+4*i;
-      cells[i].vertices[2] = 1+4*i;
-      cells[i].vertices[3] = 5+4*i;
-      cells[i].vertices[4] = 2+4*i;
-      cells[i].vertices[5] = 6+4*i;
-      cells[i].vertices[6] = 3+4*i;
-      cells[i].vertices[7] = 7+4*i;
-      cells[i].material_id = 0;
-    }
-  tria.create_triangulation (points, cells, SubCellData());
-}
 
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d=fe_degree+2, int base_fe_degree=fe_degree>
 class Test{
@@ -198,12 +133,11 @@ class Test{
 	bool compare_values(int);
 	bool compare_gradients(int);
 	bool compare_hessians(int);
-	bool reference_test(
-			FE_RaviartThomas<dim> &fe_rt,
-			std::vector<Point<dim,Number>> &points,
-			Vector<double> &dofs_actual);
-	bool actual_test(QGauss<dim> &fe_quad, Vector<double> &dofs_actual);
-	FullMatrix<double> create_node_matrix();
+	FullMatrix<double> evaluate_values_2dtensorp(
+			int c, int n_dofs, std::vector<Point<dim>> &q_points);
+	FullMatrix<double> evaluate_fe_unit_values(int c, std::vector<Point<dim>> &q_points);
+	void generate_reference_points(int c, std::vector<Point<dim,Number>> &q_points);
+
 public:
 	Test() = delete;
 	Test(bool evaluate_values, bool evaluate_gradients, bool evaluate_hessians);
@@ -247,337 +181,119 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::compa
 }
 
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
-bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::reference_test(
-		FE_RaviartThomas<dim> &fe_rt,
-		std::vector<Point<dim,Number>> &points,
-		Vector<double> &dofs_actual)
+FullMatrix<double> Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::
+evaluate_fe_unit_values(int c, std::vector<Point<dim>> &q_points)
 {
-	bool res = true;
-
-	const Number tol = 10e-12;
-	const unsigned int n_dofs = fe_rt.dofs_per_cell;
-
-	const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim> *fe_poly =
-			dynamic_cast<const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim>*>(&fe_rt);
-
-	for (auto p:points)
-	{
-		for (int c=0; c<n_components; c++)
-		{
-			//Evaluate phi and phi_hat on this point
-			std::vector<Tensor<1,dim>> phi_hat_values(n_dofs);
-			std::vector<Tensor<2,dim>> unused2;
-			std::vector<Tensor<3,dim>> unused3;
-			std::vector<Tensor<4,dim>> unused4;
-			std::vector<Tensor<5,dim>> unused5;
-
-			fe_poly->poly_space.compute(p,phi_hat_values,unused2,unused3,unused4,unused5);
-
-			std::vector<Tensor<1,dim>> phi_values(n_dofs);
-			for (int i=0; i<n_dofs; i++)
-				phi_values[i][c] = fe_rt.shape_value_component(i,p,c);
-
-			Vector<double> rhs(n_dofs);
-			Vector<double> lhs(n_dofs);
-			Number resrhs = 0, reslhs=0;
-			//Evaluate RHS and LHS
-			for (int i=0; i<n_dofs; i++)
-			{
-				rhs[i] = 0.;
-				for (int j=0; j<n_dofs;j++) //cols of C_tra
-				{
-					rhs[i] += dofs_actual[j]*(fe_poly->inverse_node_matrix(i,j));
-				}
-
-				rhs[i] *= phi_hat_values[i][c];
-				resrhs += rhs[i];
-
-				lhs[i] = phi_values[i][c]*dofs_actual[i];
-				reslhs += lhs[i];
-
-				//std::cout<<"lhs, rhs = ("<<lhs[i]<<" ,"<<rhs[i]<<")"<<std::endl;
-			}
-
-			res &= ((std::abs(reslhs - resrhs) < tol)?true:false);
-		}
-	}
-
-	return res;
-
-}
-
-
-
-template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
-bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::actual_test(
-		QGauss<dim> &fe_quad, Vector<double> &dofs_actual)
-{
-	bool res = true;
-
 	FE_RaviartThomas<dim> fe_rt(fe_degree);
-	QGauss<1>   quad_1d(n_q_points_1d);
-	//std::cout<<"1D quad points are "<<std::endl;
-	//for (auto p:quad_1d.get_points())
-	//	std::cout<<p<<std::endl;
+	FullMatrix<double> res_matrix(fe_rt.dofs_per_cell,q_points.size());
 
-	const unsigned int first_selected_component = 0;
-	    MatrixFreeFunctions::ShapeInfo<VectorizedArray<Number>> shape_info(quad_1d, fe_rt, fe_rt.component_to_base_index(first_selected_component).first,true);
-
-	const Number tol = 10e-12;
-	const unsigned int rt_dofs_per_cell = fe_rt.dofs_per_cell;
-	const unsigned int rt_dofs_per_comp = rt_dofs_per_cell/n_components;
-
-	const unsigned int   n_q_points    = fe_quad.size();
-
-
-    FullMatrix<double> inverse_node_matrix;
-    FullMatrix<double> node_matrix;
-
-
-    node_matrix = create_node_matrix();
-    for (int i=0; i<rt_dofs_per_cell; i++)
-    {
-    	for (int j=0; j<rt_dofs_per_cell; j++)
-    		std::cout<<std::setw(15)<<node_matrix(i,j);
-
-    	std::cout<<std::endl;
-    }
-    inverse_node_matrix.reinit(rt_dofs_per_cell, rt_dofs_per_cell);
-    inverse_node_matrix.invert(node_matrix); //this is C_tra = X_inv
-
-    //Convert dofs using node matrix, u_hat = C_tra.u
-    Vector<double> dofs_new(dofs_actual.size());
-    inverse_node_matrix.vmult(dofs_new,dofs_actual);
-
-
-	int c; //component
-	c = 0;
-
-    //using Finite Element functions
-
-    mylog<<"Using Finite Element functions "<<std::endl;
-
-    Vector<double> lhs_x(rt_dofs_per_comp);
-
-    FullMatrix<double> phi_values(rt_dofs_per_cell,n_q_points);
-
-    for (int i=0; i<rt_dofs_per_cell; i++)
-    {
-    	for (int j=0; j<n_q_points;j++)
-    	{
-    		Point<dim> p = fe_quad.point(i);
-    		phi_values(i,j) = fe_rt.shape_value_component(i,p,c);
-    	}
-    }
-    phi_values.Tvmult(lhs_x,dofs_actual);
-
-
-	//Tensor product for evaluation of values = N3XN2XN1 where N1,N2,N3 are 1-d matrices as stored in shapeInfo
-
-	mylog<<"Using ShapeInfo functions "<<std::endl;
-	if (rt_dofs_per_comp != ((fe_degree+2)*(fe_degree+1)))
+	//Evaluate all basis functions on these points, for only one vector component
+	for (int i=0;i<fe_rt.dofs_per_cell;i++)
 	{
-		std::cout<<"Conceptual bug - exit"<<std::endl;
-		return false;
-	}
-
-	FullMatrix<double> outputMatrix;
-	outputMatrix.reinit((fe_degree+2)*(fe_degree+1),n_q_points);
-
-	FullMatrix<double> bigMatrix(fe_degree+2, n_q_points_1d);
-	FullMatrix<double> smallMatrix(fe_degree+1,n_q_points_1d);
-	int yrows, ycols = n_q_points_1d;
-	int xrows, xcols = n_q_points_1d;
-	int row = 0, col = 0;
-
-	const int x_dir=0;
-	const int y_dir=1;
-	const int z_dir=2;
-
-	//Although we could simply make them from shape values of any component, but for better verification
-	//of code, lets make them separately during each component
-
-	//For 0th component, X is bigMatrix and y is smallmatrix
-
-	//make x and y matrices for c = 0
-	xrows = fe_degree+2; //dof = fe_degree + 1
-	yrows = fe_degree+1;
-
-	for (int i=0; i<xrows; i++)
-	{
-		for (int j=0; j<xcols; j++)
+		for (int q=0; q<q_points.size();q++)
 		{
-			bigMatrix(i,j) = shape_info.shape_values_vec[c][x_dir][i*n_q_points_1d+j][0];
-			mylog<<std::setw(20)<<bigMatrix(i,j);
-		}
-		mylog<<std::endl;
-	}
-
-	for (int i=0; i<yrows; i++)
-	{
-		for (int j=0; j<ycols; j++)
-		{
-			smallMatrix(i,j) = shape_info.shape_values_vec[c][y_dir][i*n_q_points_1d+j][0];
-			mylog<<std::setw(20)<<smallMatrix(i,j);
-		}
-		mylog<<std::endl;
-	}
-
-	//now evaluate
-	double temp;
-
-	for (int yi=0; yi<yrows; yi++)
-	{
-		for (int yj=0; yj<ycols; yj++)
-		{
-			temp = smallMatrix(yi,yj);
-			for (int xi=0; xi<xrows; xi++)
-			{
-				for (int xj=0; xj<xcols; xj++)
-				{
-					col = yj*xcols+xj;
-					row = yi*xrows+xi;
-					outputMatrix(row,col) = temp * bigMatrix(xi,xj);
-				}
-			}
+			res_matrix(i,q) = fe_rt.shape_value_component(i,q_points[q],c);
 		}
 	}
 
-
-	//now lets multiply the outputMatrix transpose with dofs_new for c=0
-	Vector<double> rhs(rt_dofs_per_comp);
-	outputMatrix.Tvmult(rhs,dofs_new);
-
-
-	for (int i=0;i<rt_dofs_per_comp;i++)
-	{
-		std::cout<<"lhs, rhs = ("<<lhs_x[i]<<" ,"<<rhs[i]<<")"<<std::endl;
-	}
-
-	return res;
-
+	return res_matrix;
 }
 
 
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
-FullMatrix<double> Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::create_node_matrix()
+FullMatrix<double> Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::
+	evaluate_values_2dtensorp(int c, int n_dofs, std::vector<Point<dim>> &q_points)
 {
-	//std::cout<<"Hello"; FullMatrix<double> N; return N;
-	//Now we need to temporarily create node matrix
-	//Reference compute_node_matrix
-	////debug - temporary stuff
-
-	FE_RaviartThomas<dim> fe_in(fe_degree);
-	const unsigned int n_dofs = fe_in.dofs_per_cell;
-	FullMatrix<double> N (n_dofs, n_dofs);
-
-	const std::vector<Point<dim> > &points = fe_in.get_generalized_support_points();
-
-    std::vector<std::vector<Vector<double> > >
-    support_point_values (n_dofs, std::vector<Vector<double> >(points.size(), Vector<double>(dim)));
-
-
+	//Lets evaluate phi_hat matrix for c = 0
 	const FE_Q<1> fe1(fe_degree+1);
 	const FE_Q<1> fe2(fe_degree);
 
-#if 0 //debug
-	std::cout<<"1D support points are "<<std::endl;
-	//for (auto p:fe1.get_unit_support_points())
-	QGauss<1>   quad_1d(n_q_points_1d);
-	for (auto p:quad_1d.get_points())
-		std::cout<<std::setw(10)<<"("<<p<<","<<fe1.shape_value(0,p)<<")";
-	std::cout<<std::endl;
-	//for (auto p:fe2.get_unit_support_points())
-	for (auto p:quad_1d.get_points())
-		std::cout<<std::setw(10)<<"("<<p<<","<<fe2.shape_value(0,p)<<")";
-	std::cout<<std::endl;
+	FullMatrix<double> res_matrix(n_dofs,q_points.size());
+	int k = 0;
 
-
-	for (int i=0; i<fe1.dofs_per_cell; i++)
+	if (c == 0)
 	{
-		for (int j=0; j<fe2.dofs_per_cell; j++)
+		for (int q=0; q<q_points.size();q++)
 		{
-		std::cout<<i<<","<<j<<" shape functions values on Point ("<<points[0]<<") = ("<<
-		fe1.shape_value(i,Point<1>(points[0][0]))<<", "<< /*1st shape function for 1st point */
-		fe2.shape_value(j,Point<1>(points[0][1]))<<")"<<std::endl; //1st shape function for 1st point
-		double v1 = fe1.shape_value(i,Point<1>(points[0][0]));
-		double v2 = fe2.shape_value(j,Point<1>(points[0][1]));
-		double vres = v1*v2;
-		std::cout<<"v1 = "<<v1<<" v2 = "<<v2<<" Result = "<< vres<<std::endl;
-				//fe2.shape_value(j,Point<1>(points[0][0]));
+			k = 0;
+			Point<1> px(q_points[q][0]);
+			Point<1> py(q_points[q][1]);
 
-		}
-	}
-#endif
-
-	if ((fe1.dofs_per_cell*fe2.dofs_per_cell*dim) != n_dofs)
-	{
-		std::cout<<"Conceptual bug - EXIT"<<std::endl;
-		return N;
-	}
-
-	int pn = 0; //point index
-	for (auto p:points)
-	{
-		std::cout<<"Point is "<<p<<std::endl;
-		Point<1> px(p[0]), py(p[1]);
-		int n = 0; //dof index
-		//Assume only 2 components
-		//first component
-		for (int i=0; i<fe1.dofs_per_cell; i++)
-		{
-			for (int j=0; j<fe2.dofs_per_cell; j++)
+			for (int i=0; i<fe1.dofs_per_cell; i++)
 			{
-				support_point_values[n][pn][0] = fe1.shape_value(i,px)*fe2.shape_value(j,py);
-				support_point_values[n][pn][1] = 0;
+				for (int j=0; j<fe2.dofs_per_cell; j++)
+				{
+					double v1 = fe1.shape_value(i,px);
+					double v2 = fe2.shape_value(j,py);
+					double vres = v1*v2;
+
+					res_matrix(k++,q) = vres;
+
+			//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[q]<<") = ("<<
+			//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
+				}
 			}
 		}
-
-		//second component
-		for (int i=0; i<fe2.dofs_per_cell; i++)
+	}
+	if (c == 1)
+	{
+		for (int q=0; q<q_points.size();q++)
 		{
-			for (int j=0; j<fe1.dofs_per_cell; j++)
+			k = fe1.dofs_per_cell*fe2.dofs_per_cell;
+			Point<1> px(q_points[q][0]);
+			Point<1> py(q_points[q][1]);
+
+			for (int i=0; i<fe2.dofs_per_cell; i++)
 			{
-				support_point_values[n][pn][0] = 0;
-				support_point_values[n][pn][1] = fe2.shape_value(i,px)*fe1.shape_value(j,py);
+				for (int j=0; j<fe1.dofs_per_cell; j++)
+				{
+					double v1 = fe2.shape_value(i,px);
+					double v2 = fe1.shape_value(j,py);
+					double vres = v1*v2;
+
+					res_matrix(k++,q) = vres;
+
+				//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[q]<<") = ("<<
+				//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
+				}
 			}
 		}
-		pn++;
-		n++;
 	}
 
-	//////debug
-	//Print the support point values
-	for (int i=0; i<n_dofs;i++)
+	return res_matrix;
+}
+
+template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
+void Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::generate_reference_points(
+		int c, std::vector<Point<dim,Number>> &q_points)
+{
+	//We choose points as tensor product of Gauss quadrature
+	//THe following selection has shown to give stable results
+	int qdegree = fe_degree+3;
+	if (c==1)
+		qdegree = fe_degree+5;
+
+	QGauss<1> quad(qdegree);
+
+	int p = 0;
+
+	for (auto y:quad.get_points())
 	{
-		for (int j=0;j<points.size();j++)
-			std::cout<<std::setw(15)<<support_point_values[i][j][0]<<", "<<support_point_values[i][j][1];
+		for (auto x:quad.get_points())
+		{
+			if (p < q_points.size())
+			{
+				q_points[p][0] = x[0];
+				q_points[p][1] = y[0];
+				//std::cout<<"  Point = "<<q_points[p];
+				p++;
+			}
+			else
+				return;
 
-		std::cout<<std::endl;
+		}
 	}
 
-
-	/////debug over
-
-	std::vector<double> nodal_values(n_dofs);
-    for (unsigned int i=0; i<n_dofs; ++i)
-    {
-        // get the values of the current set of shape functions
-        // at the generalized support points
-        fe_in.convert_generalized_support_point_values_to_dof_values(support_point_values[i],
-                                                                  nodal_values);
-
-        // Enter the interpolated dofs into the matrix
-        for (unsigned int j=0; j<n_dofs; ++j)
-          {
-            N(j,i) = nodal_values[j];
-            Assert (numbers::is_finite(nodal_values[j]), ExcInternalError());
-          }
-    }
-
-    return N;
-
-	/////debug over
 }
 
 template <typename Number, int n_components, int dim, int fe_degree, int n_q_points_1d, int base_fe_degree>
@@ -589,38 +305,22 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 
 	FE_RaviartThomas<dim> fe_rt(fe_degree);
 	QGauss<dim> fe_quad(n_q_points_1d);
-	QGauss<1>   quad_1d(n_q_points_1d);
 
-
-    const unsigned int   n_q_points    = fe_quad.size();
     const unsigned int n_dofs = fe_rt.dofs_per_cell;
     const unsigned int n_dofs_per_comp = fe_rt.dofs_per_cell/n_components;
-	//fe_unit_values.resize((dofs_per_cell*n_q_points)/n_components);
-	//shape_values_old.resize((dofs_per_cell*n_q_points)/n_components);
+
+    std::cout<<"n_dofs = "<<n_dofs<<std::endl;
 
 
 	//Define some points and dofs values on which to test results
-	std::vector<Point<dim,Number>> points(n_q_points);
 	std::srand(std::time(nullptr)); // random dof values between 0 and 1
-    //std::vector<Number> dofs_actual(n_dofs);
     Vector<double> dofs_actual(n_dofs);
 
     for (int i=0; i<n_dofs; i++)
     	dofs_actual[i] = std::rand()/static_cast<Number>(RAND_MAX);
 
-#if 0
-    res = actual_test(fe_quad,dofs_actual);
-    std::cout<<"Actual result = "<<(res == true?"Pass":"Fail")<<std::endl;
 
-
-    res = reference_test(fe_rt,points,dofs_actual);
-    std::cout<<"Reference result = "<<(res == true?"Pass":"Fail")<<std::endl;
-#endif
-
-
-
-//This is inverting to find out C matrix -- inversion is unstable
-
+#if 0 //This commented portion works - this is for reference evaluation of basis transformation matrix
     //Find no. of shape functions
 	unsigned int n_points = n_dofs;
 
@@ -630,244 +330,230 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 		return false;
 	}
 
-
-	//We choose points as tensor product of Gauss quadrature
-	//testing for deg=1m so 12 points
-	//QGauss<1>   quad_x(4);
-	//QGauss<1>   quad_y(3);
-
-	QGauss<1>   quad_x(4);
-	QGauss<1>   quad_y(4);
-
-	std::vector<Point<dim,Number>> q_points(n_points);
-	int p = 0;
-
-	for (auto y:quad_y.get_points())
-	{
-		for (auto x:quad_x.get_points())
-		{
-			if (p < n_points)
-			{
-				q_points[p][0] = x[0];
-				q_points[p][1] = y[0];
-				std::cout<<"  Point = "<<q_points[p];
-			}
-			p++;
-		}
-	}
-
-	std::cout<<std::endl;
-	std::cout<<std::endl;
-
-
-	int c = 0;
-
-	FullMatrix<Number> phi_matrix(n_dofs,n_dofs);
+    FullMatrix<Number> phi_matrix(n_dofs,n_dofs);
 	FullMatrix<Number> phi_hat_matrix(n_dofs,n_dofs);
 	FullMatrix<Number> C_matrix(n_dofs,n_dofs);
 
-	//lets generate phi matrix
-	//Evaluate all basis functions on these points, for only one vector component
-	for (int i=0;i<n_dofs;i++)
-	{
-		for (int q=0; q<q_points.size();q++)
-		{
-			phi_matrix(i,q) = fe_rt.shape_value_component(i,q_points[q],c);
-		}
-	}
+	std::vector<Point<dim,Number>> q_points(n_points);
 
+	int c = 0;
+	generate_reference_points(c,q_points);
+
+	//lets generate phi matrix
+	phi_matrix = evaluate_fe_unit_values(c,q_points);
 
 	//Lets evaluate phi_hat matrix for c = 0 FIXME : This is only for 2 dim
-	const FE_Q<1> fe1(fe_degree+1);
-	const FE_Q<1> fe2(fe_degree);
-
-	int k = 0;
-	for (int q=0; q<q_points.size();q++)
-	{
-		k = 0;
-		Point<1> px(q_points[q][0]);
-		Point<1> py(q_points[q][1]);
-
-		for (int i=0; i<fe1.dofs_per_cell; i++)
-		{
-			for (int j=0; j<fe2.dofs_per_cell; j++)
-			{
-				double v1 = fe1.shape_value(i,px);
-				double v2 = fe2.shape_value(j,py);
-				double vres = v1*v2;
-
-				phi_hat_matrix(k++,q) = vres;
-
-			//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[q]<<") = ("<<
-			//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
-			}
-		}
-	}
-
+	phi_hat_matrix = evaluate_values_2dtensorp(c, n_dofs, q_points);
 
 	//Work for c = 1
 	c = 1;
-	QGauss<1>   quad_xx(6);
-	QGauss<1>   quad_yy(6);
-	p = 0;
+	generate_reference_points(c,q_points);
 
-	for (auto y:quad_yy.get_points())
-	{
-		for (auto x:quad_xx.get_points())
-		{
-			if (p < n_points)
-			{
-				q_points[p][0] = x[0];
-				q_points[p][1] = y[0];
-				std::cout<<"  Point = "<<q_points[p];
-			}
-			p++;
-		}
-	}
-
-	//Evaluate all basis functions on new points, for only one vector component
-	for (int i=0;i<n_dofs;i++)
-	{
-		for (int q=0; q<q_points.size();q++)
-		{
-			phi_matrix(i,q) += fe_rt.shape_value_component(i,q_points[q],c);
-		}
-	}
+	phi_matrix.add(1,evaluate_fe_unit_values(c,q_points));
 
 	//Lets evaluate phi_hat matrix for c = 1, on some different points
-	for (int q=0; q<q_points.size();q++)
-	{
-		k = n_dofs_per_comp;
-		Point<1> px(q_points[q][0]);
-		Point<1> py(q_points[q][1]);
+	phi_hat_matrix.add(1,evaluate_values_2dtensorp(c, n_dofs, q_points));
 
-		for (int i=0; i<fe2.dofs_per_cell; i++)
-		{
-			for (int j=0; j<fe1.dofs_per_cell; j++)
-			{
-				double v1 = fe2.shape_value(i,px);
-				double v2 = fe1.shape_value(j,py);
-				double vres = v1*v2;
-
-				phi_hat_matrix(k++,q) = vres;
-
-			//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[q]<<") = ("<<
-			//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
-			}
-		}
-	}
-
-
-
-#if 0
-	//now here is an alternative. i choose just one point, and evaluate
-	//all the basis functions for all compnents in this one point
-	//problem: This will be a non-square matrix, so inverse cant be correctly evaluated
-
-	FullMatrix<Number> phi_matrix(n_dofs,dim);
-	FullMatrix<Number> phi_hat_matrix(n_dofs,dim);
-	FullMatrix<Number> C_matrix(n_dofs,n_dofs);
-
-
-	Point<dim> p(0.0694318,0.887298); //This is chosen from above commented code
-	Point<1> px(0.0694318);
-	Point<1> py(0.887298);
-
-	//lets generate phi matrix
-	//Evaluate all basis functions on this point, for all vector components
-	for (int i=0;i<n_dofs;i++)
-	{
-		for (int c=0;c<n_components;c++)
-		{
-			phi_matrix(i,c) = fe_rt.shape_value_component(i,p,c);
-		}
-	}
-
-	//Lets evaluate phi_hat matrix FIXME : This is only for 2 dim
-	int c = 0,k=0;
-	for (int i=0; i<fe1.dofs_per_cell; i++)
-	{
-		for (int j=0; j<fe2.dofs_per_cell; j++)
-		{
-			double v1 = fe1.shape_value(i,Point<1>(px));
-			double v2 = fe2.shape_value(j,Point<1>(py));
-			double vres = v1*v2;
-
-			phi_hat_matrix(k++,c) = vres;
-
-		//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[k]<<") = ("<<
-		//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
-		}
-	}
-
-	c = 1,k=fe1.dofs_per_cell*fe2.dofs_per_cell;
-	for (int i=0; i<fe2.dofs_per_cell; i++)
-	{
-		for (int j=0; j<fe1.dofs_per_cell; j++)
-		{
-			double v1 = fe2.shape_value(i,Point<1>(px));
-			double v2 = fe1.shape_value(j,Point<1>(py));
-			double vres = v1*v2;
-
-			phi_hat_matrix(k++,c) = vres;
-
-		//std::cout<<i<<","<<j<<" shape functions values on Point ("<<q_points[k]<<") = ("<<
-		//v1<<", "<<v2<<", "<<vres<<")"<<std::endl; //1st shape function for 1st point
-		}
-	}
-#endif
-
+	std::cout<<std::endl<<std::endl;
 
 	//print
 	for (unsigned int i=0; i<n_dofs; i++)
 	{
 		for (unsigned int j=0; j<n_dofs; j++)
 		{
-			std::cout <<std::setw(15)<<phi_matrix(i,j);
+			std::cout <<std::setw(12)<<phi_matrix(i,j);
 		}
 		std::cout<<std::endl;
 	}
 
 	std::cout<<std::endl<<std::endl;
-
 
 	for (unsigned int i=0; i<n_dofs; i++)
 	{
 		for (unsigned int j=0; j<n_dofs; j++)
 		{
-			std::cout <<std::setw(15)<<phi_hat_matrix(i,j);
+			std::cout <<std::setw(12)<<phi_hat_matrix(i,j);
 		}
 		std::cout<<std::endl;
 	}
 
-
 	std::cout<<std::endl<<std::endl;
 
-	/////REMARKS: dealii results dont seem to be correct
-	// after inversion, phi_hat * phi_hat_inv != identity
 
-	phi_hat_matrix.gauss_jordan();
+	//phi_hat_matrix.gauss_jordan();
 
-	phi_matrix.mmult(C_matrix,phi_hat_matrix);
+	//phi_matrix.mmult(C_matrix,phi_hat_matrix);
 
+	FullMatrix<Number> temp_phi_matrix(n_dofs,n_dofs);
+	for (unsigned int i=0; i<n_dofs; i++)
+		{
+			for (unsigned int j=0; j<n_dofs; j++)
+			{
+				C_matrix(i,j) = RTbasisTp_2_1[i][j];
+			}
+
+		}
+
+	//Calculate C.phi_hat := phi  Matches!
+	C_matrix.mmult(temp_phi_matrix,phi_hat_matrix);
 
 	for (unsigned int i=0; i<n_dofs; i++)
 	{
 		for (unsigned int j=0; j<n_dofs; j++)
 		{
-			std::cout <<std::setw(15)<<C_matrix(i,j);
+			std::cout <<std::setw(12)<<temp_phi_matrix(i,j);
 		}
 		std::cout<<std::endl;
 	}
 
 
 	std::cout<<std::endl<<std::endl;
+#endif
+
+#if 0
+//This is test -- it fails
+	if (evaluate_values)
+	{
+		//Lets take quadrature points and evaluate FE on it
+		//std::vector<Point<dim>> test_points = fe_quad.get_points();
+		std::vector<Point<dim>> test_points(1);
+		test_points[0][0] = 0.15;
+		test_points[0][1] = 0.15;
+		const int n_points = test_points.size();
+
+	    FullMatrix<Number> phi_matrix(n_dofs,n_points);
+	    FullMatrix<Number> test_phi_matrix(n_dofs,n_points);
+		FullMatrix<Number> phi_hat_matrix(n_dofs,n_points);
+		FullMatrix<Number> C_matrix(n_dofs,n_dofs);
+
+		for (unsigned int i=0; i<n_dofs; i++)
+		{
+			for (unsigned int j=0; j<n_dofs; j++)
+			{
+				C_matrix(i,j) = RTbasisTp_2_1[i][j];
+			}
+		}
 
 
+		int c = 0;
+		//lets generate phi matrix
+		phi_matrix = evaluate_fe_unit_values(c,test_points);
 
+		for (unsigned int i=0; i<n_dofs; i++)
+		{
+			for (unsigned int j=0; j<n_points; j++)
+			{
+				std::cout <<std::setw(12)<<phi_matrix(i,j);
+			}
+			std::cout<<std::endl;
+		}
+
+		std::cout<<std::endl<<std::endl;
+
+		//Lets evaluate phi_hat matrix
+		phi_hat_matrix = evaluate_values_2dtensorp(c, n_dofs, test_points);
+
+		for (unsigned int i=0; i<n_dofs; i++)
+		{
+			for (unsigned int j=0; j<n_points; j++)
+			{
+				std::cout <<std::setw(12)<<phi_hat_matrix(i,j);
+			}
+			std::cout<<std::endl;
+		}
+
+		std::cout<<std::endl<<std::endl;
+
+		//Calculate C.phi_hat := phi
+		C_matrix.mmult(test_phi_matrix,phi_hat_matrix);
+		for (unsigned int i=0; i<n_dofs; i++)
+		{
+			for (unsigned int j=0; j<n_points; j++)
+			{
+				std::cout <<std::setw(12)<<test_phi_matrix(i,j);
+			}
+			std::cout<<std::endl;
+		}
+
+		std::cout<<std::endl<<std::endl;
+	}
 
 
 	std::cout<<std::endl;
+#endif
+
+#if 0
+	//This debug test shows that even raw RT polynomials are zero for one half
+	// and non-zero for other half..just like mine
+	//But still their basis transformation works!! and mine fails -- why??
+	const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim> *fe_poly =
+			dynamic_cast<const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim>*>(&fe_rt);
+
+	//Choose some point
+	Point<dim> p(0.15, 0.18);
+	//Evaluate basis functions on this point
+	std::vector<Tensor<1,dim>> poly_values(fe_rt.dofs_per_cell);
+	std::vector<Tensor<2,dim>> unused2;
+	std::vector<Tensor<3,dim>> unused3;
+	std::vector<Tensor<4,dim>> unused4;
+	std::vector<Tensor<5,dim>> unused5;
+
+	fe_poly->poly_space.compute(p,poly_values,unused2,unused3,unused4,unused5);
+
+	std::vector<Tensor<1,dim>> fe_values(fe_rt.dofs_per_cell);
+	//Evaluate all basis functions on these points, for both vector components
+	for (int i=0;i<fe_rt.dofs_per_cell;i++)
+	{
+		fe_values[i][0] = fe_rt.shape_value_component(i,p,0);
+		fe_values[i][1] = fe_rt.shape_value_component(i,p,1);
+	}
+
+	for (int i=0;i<fe_rt.dofs_per_cell;i++)
+	{
+		std::cout<<"("<<poly_values[i][0]<<", "<<fe_values[i][0]<<")"<<std::endl;
+	}
+
+	std::cout<<std::endl;
+	for (int i=0;i<fe_rt.dofs_per_cell;i++)
+	{
+		std::cout<<"("<<poly_values[i][1]<<", "<<fe_values[i][1]<<")"<<std::endl;
+	}
+#endif
+
+	///Debugging to confirm my understanding of TP
+	const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim> *fe_poly =
+			dynamic_cast<const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim>*>(&fe_rt);
+
+	//Choose some point
+	Point<dim> p(0.15, 0.18);
+	//Evaluate basis functions on this point
+	std::vector<Tensor<1,dim>> poly_values(fe_rt.dofs_per_cell);
+	std::vector<Tensor<2,dim>> unused2;
+	std::vector<Tensor<3,dim>> unused3;
+	std::vector<Tensor<4,dim>> unused4;
+	std::vector<Tensor<5,dim>> unused5;
+
+	fe_poly->poly_space.compute(p,poly_values,unused2,unused3,unused4,unused5);
+
+
+	std::vector<Point<dim>> test_points(1);
+	test_points[0] = p;
+	const int n_points = test_points.size();
+
+    FullMatrix<Number> phi_hat_matrix(n_dofs,n_points);
+
+	phi_hat_matrix = evaluate_values_2dtensorp(0 /*c*/, n_dofs, test_points);
+
+	for (unsigned int i=0; i<n_dofs; i++)
+	{
+		for (unsigned int j=0; j<n_points; j++)
+		{
+			std::cout <<std::setw(12)<<phi_hat_matrix(i,j);
+		}
+		std::cout<<std::endl;
+	}
+
+	std::cout<<std::endl<<std::endl;
 
 	return true;
 }
@@ -897,6 +583,8 @@ int main(int argc, char *argv[])
 
 	//for RT, give n-1_points appropriately
     res = Test<double,2,2,1>(evaluate_values,evaluate_gradients,evaluate_hessians).run(debug);
+    //res = Test<double,2,2,2>(evaluate_values,evaluate_gradients,evaluate_hessians).run(debug);
+
     //res = Test<double,3,3,2>(evaluate_values,evaluate_gradients,evaluate_hessians).run(debug);
     //res = Test<double,3,3,3>(evaluate_values,evaluate_gradients,evaluate_hessians).run(debug);
 
