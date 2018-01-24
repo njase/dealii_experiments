@@ -10,5 +10,14 @@ case $1 in
                 ;;
 esac
 
-cmake -DDEAL_II_WITH_LAPACK=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=. ../../dealii/
+
+export CXX="/home/smehta/opt/clang5.0.0/bin/clang++"
+export CC="ccache /home/smehta/opt/clang5.0.0/bin/clang"
+rm -fr CMakeCache.txt CMakeFiles
+#SAURABH - noticed error on Uni machine that running cmake on examples fails to detect CXX compiler
+#I guess the reason is that I used ccache for compiling dealii, and then the cmake cached variables from
+#dealii are automatically take by the test program cmake lists. cmake has possibly some issue with
+#reading CMAKE_CXX_COMPILER_ARG1 in automatic mode.
+#Workaround - dont use ccache with test program, give CXX_COMPILER explicity in command to cmake
+cmake -DCMAKE_CXX_COMPILER=/home/smehta/opt/clang5.0.0/bin/clang++ -DDEAL_II_DIR=../../install/dealii_clang .
 make -j4
