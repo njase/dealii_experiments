@@ -10,6 +10,10 @@
 // I checked with matlab
 // After identifying the coordinate transformation matrices,
 // these will be hardcoded for several degress due to the dealii bug!
+//IT DOES NOT WORK THIS WAY _ SEE EXPLANATIONS BELOW
+//Since dealii raw basis functions are also defined Lagrange polynomials with TP on each
+//component -- this is exactly what I need.
+//C matrix is already calculated and need not repeat this effort. This test is stopped here
 /////////////////
 
 
@@ -410,8 +414,15 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 	std::cout<<std::endl<<std::endl;
 #endif
 
-#if 0
 //This is test -- it fails
+	//Analysis: I used not all basis functions to evaluate C matrix.
+	//In principle all the basis functions should be used in one go to find out C matrix
+	//This will be an overdetemrined system, and maybe LS method is then needed. Or maybe not.
+	//But thats for experimentation
+	//Since dealii raw basis functions are also defined Lagrange polynomials with TP on each
+	//component -- this is exactly what I need.
+	//C matrix is already calculated and need not repeat this effort.
+	//
 	if (evaluate_values)
 	{
 		//Lets take quadrature points and evaluate FE on it
@@ -480,7 +491,7 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 
 
 	std::cout<<std::endl;
-#endif
+
 
 #if 0
 	//This debug test shows that even raw RT polynomials are zero for one half
@@ -520,7 +531,9 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 	}
 #endif
 
-	///Debugging to confirm my understanding of TP
+#if 0
+	///Debugging to confirm my understanding of TP -- this understanding is correct
+	//TP evalation inside dealii happens similar to as I expect
 	const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim> *fe_poly =
 			dynamic_cast<const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim>*>(&fe_rt);
 
@@ -554,6 +567,7 @@ bool Test<Number,n_components,dim,fe_degree,n_q_points_1d,base_fe_degree>::run(b
 	}
 
 	std::cout<<std::endl<<std::endl;
+#endif
 
 	return true;
 }
