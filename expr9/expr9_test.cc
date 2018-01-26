@@ -333,7 +333,6 @@ void test ()
 	      {
 	        const double val = -1. + 2.*random_value<double>();
 	        system_rhs.block(i)(j) = val;
-	        src_vec.block(i)(j) = val;
 	      }
 
 	  system_matrix.vmult (solution, system_rhs);
@@ -356,11 +355,14 @@ void test ()
 	  }
 
 
-	  //typedef std::vector<Vector<double> > VectorType;
+	  //Convert moment dofs to nodal dofs for RT tensor product
+	  fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
+
 	  typedef  BlockVector<double> VectorType;
 	  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
 	  mf.vmult(dst_vec, src_vec);
 
+#if 0 //open later
 	  //Debug
 	  std::ofstream logfile("output");
 	  deallog.attach(logfile);
@@ -382,6 +384,7 @@ void test ()
 	  deallog.detach();
 
 	  std::cout<<" Final result : "<<((result==true)?"pass ": "fail ")<<std::endl<<std::endl;
+#endif
 }
 
 
