@@ -41,58 +41,53 @@
 //More basic tests
 //Comparison of general output of FEValues (MatrixFree)
 // and FEEvaluationGen+MatrixFree(for RT)
-//sibling test: expr_4 - test2.cc and matrix_vector_stokes.cc
 
 
-void test_mesh (Triangulation<2> &tria,
+std::ofstream logfile("output");
+
+void unit_cell_mesh (Triangulation<3> &tria,
                   const double scale_grid = 1.)
 {
-  const unsigned int dim = 2;
-
-#if 0
-  std::vector<Point<dim> > points (12);
+  const unsigned int dim = 3;
+  std::vector<Point<dim> > points (8);
 
   // build the mesh layer by layer from points
 
   // 1. cube cell
-  points[0] = Point<dim> (0, 0);
-  points[1] = Point<dim> (0, 1);
-  points[2] = Point<dim> (1,0);
-  points[3] = Point<dim> (1,1);
-
-  // 2. rectangular cell
-  points[4] = Point<dim> (3., 0);
-  points[5] = Point<dim> (3., 1);
-
-  // 3. parallelogram cell
-  points[6] = Point<dim> (5., 1.);
-  points[7] = Point<dim> (5., 2.);
-
-  // almost square cell (but trapezoidal by
-  // 1e-8)
-  points[8] = Point<dim> (6., 1.);
-  points[9] = Point<dim> (6., 2.+1e-8);
-
-  // apparently trapezoidal cell
-  points[10] = Point<dim> (7., 1.4);
-  points[11] = Point<dim> (7.5, numbers::PI);
+  points[0] = Point<dim> (0,0,0);
+  points[1] = Point<dim> (0,1.,0);
+  points[2] = Point<dim> (0,0,1);
+  points[3] = Point<dim> (0,1.,1);
+  points[4] = Point<dim> (1.,0,0);
+  points[5] = Point<dim> (1.,1.,0);
+  points[6] = Point<dim> (1.,0,1);
+  points[7] = Point<dim> (1.,1.,1);
 
   if (scale_grid != 1.)
     for (unsigned int i=0; i<points.size(); ++i)
       points[i] *= scale_grid;
 
-
   // connect the points to cells
-  std::vector<CellData<dim> > cells(5);
-  for (unsigned int i=0; i<5; ++i)
-    {
-      cells[i].vertices[0] = 0+2*i;
-      cells[i].vertices[1] = 2+2*i;
-      cells[i].vertices[2] = 1+2*i;
-      cells[i].vertices[3] = 3+2*i;
-      cells[i].material_id = 0;
-    }
-#endif
+  std::vector<CellData<dim> > cells(1);
+
+   cells[0].vertices[0] = 0;
+   cells[0].vertices[1] = 4;
+   cells[0].vertices[2] = 1;
+   cells[0].vertices[3] = 5;
+   cells[0].vertices[4] = 2;
+   cells[0].vertices[5] = 6;
+   cells[0].vertices[6] = 3;
+   cells[0].vertices[7] = 7;
+   cells[0].material_id = 0;
+
+  tria.create_triangulation (points, cells, SubCellData());
+}
+
+
+void unit_cell_mesh (Triangulation<2> &tria,
+                  const double scale_grid = 1.)
+{
+  const unsigned int dim = 2;
 
   std::vector<Point<dim> > points (4);
 
@@ -118,6 +113,7 @@ class MatrixFreeTest
 public:
   typedef typename DoFHandler<dim>::active_cell_iterator CellIterator;
   typedef double Number;
+  const VectorizedArray<Number> *values_quad_new_impl = nullptr;
 
   MatrixFreeTest(const MatrixFree<dim,Number> &data_in, bool check_with_scalar=false):
 	  	  	  data (data_in), n_q_points_1d(degree_p+2)
@@ -139,34 +135,13 @@ public:
     FEEvaluationGen<FE_RaviartThomas<dim>,degree_p+2,dim,degree_p+1,Number> velocity (data, 0);
     FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number> pressure (data, 1);
 
-
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
         velocity.reinit (cell);
         velocity.read_dof_values (src.block(0));
         velocity.evaluate (false,true,false);
-        pressure.reinit (cell);
-        pressure.read_dof_values (src.block(1));
-        pressure.evaluate (true,false,false);
-
-        for (unsigned int q=0; q<velocity.n_q_points; ++q)
-          {
-            Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
-            vector_t pres = pressure.get_value(q);
-            vector_t div = -trace(grad_u);
-            pressure.submit_value   (div, q);
-
-            // subtract p * I
-            for (unsigned int d=0; d<dim; ++d)
-              grad_u[d][d] -= pres;
-
-            velocity.submit_gradient(grad_u, q);
-          }
-
-        velocity.integrate (false,true);
-        velocity.distribute_local_to_global (dst.block(0));
-        pressure.integrate (true,false);
-        pressure.distribute_local_to_global (dst.block(1));
+        //Debug
+        values_quad_new_impl = velocity.begin_values();
       }
 
     //std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
@@ -201,172 +176,108 @@ template <int dim, int fe_degree>
 void test ()
 {
 	  Triangulation<dim>   triangulation;
-	  test_mesh(triangulation);
-#if 0
-	  create_mesh (triangulation);
-	  if (fe_degree == 1)
-	    triangulation.refine_global (4-dim);
-	  else
-	    triangulation.refine_global (3-dim);
-#endif
+	  unit_cell_mesh(triangulation);
 
 	  std::cout<<"No of active cells from triangulation = "<<triangulation.n_active_cells()<<std::endl;
 
 	  FE_RaviartThomas<dim> fe_u(fe_degree);
-	  FE_Q<dim>            fe_p (fe_degree);
-	  FESystem<dim>        fe (fe_u, 1, fe_p, 1);
 	  DoFHandler<dim>      dof_handler_u (triangulation);
-	  DoFHandler<dim>      dof_handler_p (triangulation);
-	  DoFHandler<dim>      dof_handler (triangulation);
 
 	  MatrixFree<dim,double> mf_data(true);
 
 	  ConstraintMatrix     constraints;
 
-	  BlockSparsityPattern      sparsity_pattern;
-	  BlockSparseMatrix<double> system_matrix;
 
-	  BlockVector<double> solution;
-	  BlockVector<double> system_rhs;
-	  BlockVector<double> src_vec, dst_vec;
+	  BlockVector<double> src_dofs, mf_res_vec, old_res_vec;
 
-	  dof_handler.distribute_dofs (fe);
 	  dof_handler_u.distribute_dofs (fe_u);
-	  dof_handler_p.distribute_dofs (fe_p);
-	  DoFRenumbering::component_wise (dof_handler);
 
 	  int n_u = dof_handler_u.n_dofs();
-	  int n_p = dof_handler_p.n_dofs();
 
 	  constraints.close ();
 
+	  src_dofs.reinit (1);
+	  src_dofs.block(0).reinit (n_u);
+	  src_dofs.collect_sizes ();
 
-	  BlockDynamicSparsityPattern dsp(2, 2);
-	  dsp.block(0, 0).reinit (n_u, n_u);
-	  dsp.block(1, 0).reinit (n_p, n_u);
-	  dsp.block(0, 1).reinit (n_u, n_p);
-	  dsp.block(1, 1).reinit (n_p, n_p);
-	  dsp.collect_sizes ();
-	  DoFTools::make_sparsity_pattern (dof_handler, dsp, constraints, false);
-	  sparsity_pattern.copy_from(dsp);
-	  system_matrix.reinit (sparsity_pattern);
+	  mf_res_vec.reinit(src_dofs);
+	  old_res_vec.reinit(src_dofs);
 
 
-	  //#5666: All components of velocity are treated as one block, pressure is treated as another block
-	  //all components of velocity together
-	  system_rhs.reinit (2);
-	  system_rhs.block(0).reinit (n_u);
-	  system_rhs.block(1).reinit (n_p);
-	  system_rhs.collect_sizes ();
-
-	  solution.reinit (system_rhs);
-
-	  src_vec.reinit(system_rhs);
-	  dst_vec.reinit(system_rhs);
-
-	  // this is from step-22
-	  {
-	    QGauss<dim>   quadrature_formula(fe_degree+2);
-
-	    FEValues<dim> fe_values (fe, quadrature_formula,
-	                             update_values    |
-	                             update_JxW_values |
-	                             update_gradients);
-
-	    const unsigned int   dofs_per_cell   = fe.dofs_per_cell;
-	    const unsigned int   n_q_points      = quadrature_formula.size();
-
-	    FullMatrix<double>   local_matrix (dofs_per_cell, dofs_per_cell);
-
-	    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
-
-	    const FEValuesExtractors::Vector velocities (0);
-	    const FEValuesExtractors::Scalar pressure (dim);
-
-	    std::vector<Tensor<2,dim> > phi_grad_u (dofs_per_cell);
-	    std::vector<double>         div_phi_u  (dofs_per_cell);
-	    std::vector<double>         phi_p      (dofs_per_cell);
-
-	    typename DoFHandler<dim>::active_cell_iterator
-	    cell = dof_handler.begin_active(),
-	    endc = dof_handler.end();
-	    for (; cell!=endc; ++cell)
+	  // fill some random values for actual dofss
+	  for (unsigned int i=0; i<1; ++i)
+	    for (unsigned int j=0; j<src_dofs.block(i).size(); ++j)
 	      {
-	        fe_values.reinit (cell);
-	        local_matrix = 0;
-
-	        for (unsigned int q=0; q<n_q_points; ++q)
-	          {
-	            for (unsigned int k=0; k<dofs_per_cell; ++k)
-	              {
-	                phi_grad_u[k] = fe_values[velocities].gradient (k, q);
-	                div_phi_u[k]  = fe_values[velocities].divergence (k, q);
-	                phi_p[k]      = fe_values[pressure].value (k, q);
-	              }
-
-	            for (unsigned int i=0; i<dofs_per_cell; ++i)
-	              {
-	                for (unsigned int j=0; j<=i; ++j)
-	                  {
-	                    local_matrix(i,j) += (scalar_product(phi_grad_u[i], phi_grad_u[j])
-	                                          - div_phi_u[i] * phi_p[j]
-	                                          - phi_p[i] * div_phi_u[j])
-	                                         * fe_values.JxW(q);
-	                  }
-	              }
-	          }
-	        for (unsigned int i=0; i<dofs_per_cell; ++i)
-	          for (unsigned int j=i+1; j<dofs_per_cell; ++j)
-	            local_matrix(i,j) = local_matrix(j,i);
-
-	        cell->get_dof_indices (local_dof_indices);
-	        constraints.distribute_local_to_global (local_matrix,
-	                                                local_dof_indices,
-	                                                system_matrix);
+	        //const double val = -1. + 2.*random_value<double>();
+	    	//debug, set all to 1
+	    	const double val = 1.0;
+	        src_dofs.block(i)(j) = val;
 	      }
+
+	  QGauss<dim>   quadrature_formula(fe_degree+2);
+	  FullMatrix<double> N_matrix(n_u,quadrature_formula.size());
+	  double values_quad_old_impl[n_u];
+
+
+	  //Evaluate only on unit cell
+	  //Non MF implementation
+	  {
+		//first test without C matrix, later use RT and use C matrix
+
+		const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim> *fe_poly =
+				dynamic_cast<const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim>*>(&fe_u);
+
+		//Evaluate basis functions on these point
+		std::vector<Tensor<1,dim>> poly_values(n_u);
+		std::vector<Tensor<2,dim>> unused2;
+		std::vector<Tensor<3,dim>> unused3;
+		std::vector<Tensor<4,dim>> unused4;
+		std::vector<Tensor<5,dim>> unused5;
+
+    	for (unsigned int q=0; q<quadrature_formula.size(); ++q)
+    	{
+   			Point<dim> p = quadrature_formula.get_points()[q];
+			fe_poly->poly_space.compute(p,poly_values,unused2,unused3,unused4,unused5);
+			for (int i=0;i<n_u;i++)
+					N_matrix(i,q) = poly_values[i][0]; //Only for component 0 , debug FIXME
+		}
+
+    	//N_matrix.Tvmult(old_res_vec(0),src_dofs(0));
 	  }
 
 
-	  // first system_rhs with random numbers
-	  for (unsigned int i=0; i<2; ++i)
-	    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-	      {
-	        const double val = -1. + 2.*random_value<double>();
-	        system_rhs.block(i)(j) = val;
-	      }
-
-	  system_matrix.vmult (solution, system_rhs);
-
-
-	  // setup matrix-free structure
+	  //MF implementation
 	  {
 	    std::vector<const DoFHandler<dim>*> dofs;
 	    dofs.push_back(&dof_handler_u);
-	    dofs.push_back(&dof_handler_p);
 	    ConstraintMatrix dummy_constraints;
 	    dummy_constraints.close();
 	    std::vector<const ConstraintMatrix *> constraints;
-	    constraints.push_back (&dummy_constraints);
 	    constraints.push_back (&dummy_constraints);
 	    QGauss<1> quad(fe_degree+2);
 	    mf_data.reinit (dofs, constraints, quad,
 	                    typename MatrixFree<dim>::AdditionalData
 	                    (MatrixFree<dim>::AdditionalData::none));
+
+		  //Convert moment dofs to nodal dofs for RT tensor product
+		  //fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
+
+		  typedef  BlockVector<double> VectorType;
+		  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
+		  //mf.vmult(mf_res_vec, src_dofs);
+
+		  int n_eval_elements = n_u;
 	  }
 
+	  //mf.values_quad_new_impl is now available = mf_res_vec
 
-	  //Convert moment dofs to nodal dofs for RT tensor product
-	  fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
 
-	  typedef  BlockVector<double> VectorType;
-	  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-	  mf.vmult(dst_vec, src_vec);
+
+
+
 
 #if 0 //open later
 	  //Debug
-	  std::ofstream logfile("output");
-	  deallog.attach(logfile);
-
 	  // Verification
 	  double error = 0., tol=1e-10;
 	  bool result = true;
@@ -381,7 +292,7 @@ void test ()
 	  double relative = solution.block(0).l1_norm();
 	  deallog << "  Verification fe degree " << fe_degree  <<  ": "
 	          << error/relative << std::endl << std::endl;
-	  deallog.detach();
+
 
 	  std::cout<<" Final result : "<<((result==true)?"pass ": "fail ")<<std::endl<<std::endl;
 #endif
@@ -390,7 +301,7 @@ void test ()
 
 int main ()
 {
-  //deallog.attach(logfile);
+  deallog.attach(logfile);
 
   //deallog << std::setprecision (3);
 
@@ -407,4 +318,5 @@ int main ()
     //test<3,2>();
     //deallog.pop();
   }
+  deallog.detach();
 }
