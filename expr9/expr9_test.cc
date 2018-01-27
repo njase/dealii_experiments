@@ -107,13 +107,15 @@ void unit_cell_mesh (Triangulation<2> &tria,
   tria.create_triangulation (points, cells, SubCellData());
 }
 
+const int n_array_elements = VectorizedArray<double>::n_array_elements;
+const VectorizedArray<double> *values_quad_new_impl = nullptr;
+
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
 {
 public:
   typedef typename DoFHandler<dim>::active_cell_iterator CellIterator;
   typedef double Number;
-  const VectorizedArray<Number> *values_quad_new_impl = nullptr;
 
   MatrixFreeTest(const MatrixFree<dim,Number> &data_in, bool check_with_scalar=false):
 	  	  	  data (data_in), n_q_points_1d(degree_p+2)
@@ -133,13 +135,12 @@ public:
   {
     typedef VectorizedArray<Number> vector_t;
     FEEvaluationGen<FE_RaviartThomas<dim>,degree_p+2,dim,degree_p+1,Number> velocity (data, 0);
-    FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number> pressure (data, 1);
 
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
         velocity.reinit (cell);
         velocity.read_dof_values (src.block(0));
-        velocity.evaluate (false,true,false);
+        velocity.evaluate (true,false,false);
         //Debug
         values_quad_new_impl = velocity.begin_values();
       }
@@ -153,8 +154,6 @@ public:
   {
     if (data.is_primitive())
     {
-    	//data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply_vector,
-        //            this, dst, src);
     	std::cout<<"Primitive element not supported in this test"<<std::endl;
     }
     else
@@ -172,7 +171,7 @@ private:
 };
 
 
-template <int dim, int fe_degree>
+template <int dim, int fe_degree, int n_components=dim>
 void test ()
 {
 	  Triangulation<dim>   triangulation;
@@ -204,18 +203,12 @@ void test ()
 	  old_res_vec.reinit(src_dofs);
 
 
-	  // fill some random values for actual dofss
-	  for (unsigned int i=0; i<1; ++i)
-	    for (unsigned int j=0; j<src_dofs.block(i).size(); ++j)
-	      {
-	        //const double val = -1. + 2.*random_value<double>();
-	    	//debug, set all to 1
-	    	const double val = 1.0;
-	        src_dofs.block(i)(j) = val;
-	      }
-
 	  QGauss<dim>   quadrature_formula(fe_degree+2);
-	  FullMatrix<double> N_matrix(n_u,quadrature_formula.size());
+	  int n_q = quadrature_formula.size();
+
+	  std::vector<FullMatrix<double>> N_matrices(n_components,FullMatrix<double>(n_u,n_q));
+	  std::vector<FullMatrix<double>> phi_hat_matrices(n_components,FullMatrix<double>(n_u,n_q));
+
 	  double values_quad_old_impl[n_u];
 
 
@@ -234,15 +227,17 @@ void test ()
 		std::vector<Tensor<4,dim>> unused4;
 		std::vector<Tensor<5,dim>> unused5;
 
-    	for (unsigned int q=0; q<quadrature_formula.size(); ++q)
+    	for (unsigned int q=0; q<n_q; ++q)
     	{
    			Point<dim> p = quadrature_formula.get_points()[q];
 			fe_poly->poly_space.compute(p,poly_values,unused2,unused3,unused4,unused5);
 			for (int i=0;i<n_u;i++)
-					N_matrix(i,q) = poly_values[i][0]; //Only for component 0 , debug FIXME
+			{
+				for (int c=0; c<n_components; c++)
+					N_matrices[c](i,q) = poly_values[i][c];
+			}
 		}
 
-    	//N_matrix.Tvmult(old_res_vec(0),src_dofs(0));
 	  }
 
 
@@ -259,43 +254,72 @@ void test ()
 	                    typename MatrixFree<dim>::AdditionalData
 	                    (MatrixFree<dim>::AdditionalData::none));
 
-		  //Convert moment dofs to nodal dofs for RT tensor product
-		  //fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
+		//Convert moment dofs to nodal dofs for RT tensor product
+		//fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
 
-		  typedef  BlockVector<double> VectorType;
-		  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-		  //mf.vmult(mf_res_vec, src_dofs);
+		typedef  BlockVector<double> VectorType;
+		MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
 
-		  int n_eval_elements = n_u;
+		const int n_u_per_c = n_u/n_components;
+
+		for (int i=0; i<n_u; i++)
+		{
+			int c = i/n_u_per_c;
+
+			for (unsigned int j=0; j<src_dofs.block(0).size(); ++j)
+		      {
+		         src_dofs.block(0)(j) = 0;
+		      }
+
+			//Debug
+			src_dofs.block(0)(i) = 1.0;
+			mf.vmult(mf_res_vec, src_dofs);
+
+			for (int q=0; q<n_q; q++)
+			{
+				phi_hat_matrices[c](i,q) = values_quad_new_impl[c*n_q+q][0];
+			}
+		}
 	  }
 
-	  //mf.values_quad_new_impl is now available = mf_res_vec
 
+    	std::cout<<"Quad poitns are"<<std::endl;
+    	for (unsigned int d=0; d<dim; d++)
+    	{
+    		for (unsigned int q=0; q<n_q; q++)
+    		{
+    			std::cout <<std::setw(12)<<quadrature_formula.get_points()[q][d];
+    		}
+    		std::cout<<std::endl;
+    	}
+    	std::cout<<std::endl;
+    	std::cout<<std::endl;
 
+    	for (int c=0; c<n_components; c++)
+    	{
+    		std::cout<<"Component no = "<<c<<"  ========================"<<std::endl;
+    		std::cout<<"N matrix from RT raw polynomials is"<<std::endl;
+    		for (unsigned int i=0; i<n_u; i++)
+    		{
+    			for (unsigned int q=0; q<n_q; q++)
+    			{
+    				std::cout <<std::setw(12)<<N_matrices[c](i,q);
+    			}
+    			std::cout<<std::endl;
+    		}
+    		std::cout<<std::endl<<std::endl;
 
-
-
-
-#if 0 //open later
-	  //Debug
-	  // Verification
-	  double error = 0., tol=1e-10;
-	  bool result = true;
-
-	  for (unsigned int i=0; i<2; ++i)
-	    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-	    {
-	      error += std::fabs (solution.block(i)(j)-dst_vec(i)(j));
-	      if (error > tol)
-	    		result = false;
-	    }
-	  double relative = solution.block(0).l1_norm();
-	  deallog << "  Verification fe degree " << fe_degree  <<  ": "
-	          << error/relative << std::endl << std::endl;
-
-
-	  std::cout<<" Final result : "<<((result==true)?"pass ": "fail ")<<std::endl<<std::endl;
-#endif
+    		std::cout<<"N matrix from MF is"<<std::endl;
+    		for (unsigned int i=0; i<n_u; i++)
+    		{
+    			for (unsigned int q=0; q<n_q; q++)
+    			{
+    				std::cout <<std::setw(12)<<phi_hat_matrices[c](i,q);
+    			}
+    			std::cout<<std::endl;
+    		}
+    		std::cout<<std::endl<<std::endl;
+    	}
 }
 
 
