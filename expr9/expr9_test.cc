@@ -134,7 +134,7 @@ public:
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
     typedef VectorizedArray<Number> vector_t;
-    FEEvaluationGen<FE_RaviartThomas<dim>,degree_p+2,dim,degree_p+1,Number> velocity (data, 0);
+    FEEvaluationGen<FE_RaviartThomas<dim>,degree_p+2,dim,degree_p,Number> velocity (data, 0);
 
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
@@ -271,13 +271,19 @@ void test ()
 		         src_dofs.block(0)(j) = 0;
 		      }
 
-			//Debug
+
 			src_dofs.block(0)(i) = 1.0;
+			//Debug
+			std::cout<<std::endl;
+			//for (int n=0;n<n_u;n++)
+			//	std::cout<<std::setw(10)<<src_dofs.block(0)(n);
+			//std::cout<<std::endl;
 			mf.vmult(mf_res_vec, src_dofs);
 
 			for (int q=0; q<n_q; q++)
 			{
-				phi_hat_matrices[c](i,q) = values_quad_new_impl[c*n_q+q][0];
+				//phi_hat_matrices[c](i,q) = values_quad_new_impl[c*n_q+q][0];
+				phi_hat_matrices[c](i,q) = values_quad_new_impl[q][0];
 			}
 		}
 	  }

@@ -5,6 +5,9 @@ case $1 in
         2)
 		cp -f temp/CMakeLists.txt_test2 CMakeLists.txt
                 ;;
+        3)
+		cp -f temp/CMakeLists.txt_test3 CMakeLists.txt
+                ;;
         *)
 		cp -f temp/CMakeLists.txt_test CMakeLists.txt
                 ;;

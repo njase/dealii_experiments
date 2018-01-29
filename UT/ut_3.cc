@@ -30,14 +30,18 @@ int main(int argc, char *argv[])
 	typedef VectorizedArray<Number> VecArr;
 	const int n_array_elements = VectorizedArray<Number>::n_array_elements;
 
-	VecArr X_shape_data[x_size];
-	VecArr Y_shape_data[y_size];
+	VecArr X_shape_data[x_size] = {{.6872,.6872},{0,0} ,{-0.0872,-0.0872},
+			{0.3999,0.3999},{1,1},{0.3999,0.3999},
+			{-0.0872,-0.0872},{0,0},{0.6872,0.6872}};
+	VecArr Y_shape_data[y_size] = {{0.8872,0.8872}, {0.5,0.5}, {0.11270,0.11270},
+			{0.11270,0.11270}, {0.5,0.5},{0.8872,0.8872}};
 	VecArr u[u_size];
 	VecArr quad_out[out_size];
 	VecArr temp_quad_out[1000];
 
 	int t = 10;
 
+#if 0
 	for (int i=0; i<x_size; i++)
 	{
 		for (int n=0; n<n_array_elements; n++)
@@ -62,7 +66,15 @@ int main(int argc, char *argv[])
 			u[i][n] = t;
 		t++;
 	}
+#endif
 
+	for (int i=0; i<u_size; i++)
+	{
+		for (int n=0; n<n_array_elements; n++)
+			u[i][n] = 0.0;
+		t++;
+	}
+	u[1][0] = 1.0; u[1][1] = 1.0;
 
 
 #if 0 //Works
@@ -71,11 +83,11 @@ int main(int argc, char *argv[])
 	apply_anisotropic<dim, fe_degree_y, n_q_points_1d, VecArr,1,true,false,fe_degree_x>(Y_shape_data, temp_quad_out,quad_out);
 #endif
 
-#if 0 //Works
+//#if 0 //Works
 	//perform [tr(X) \otime tr(Y)]u
 	apply_anisotropic<dim, fe_degree_y, n_q_points_1d, VecArr,0,true,false,fe_degree_x>(Y_shape_data, u,temp_quad_out);
 	apply_anisotropic<dim, fe_degree_x, n_q_points_1d, VecArr,1,true,false,fe_degree_y>(X_shape_data, temp_quad_out,quad_out);
-#endif
+//#endif
 
 	std::cout<<std::endl<<"X matrix"<<std::endl;
 	for (int i=0; i<(fe_degree_x+1); i++)
@@ -98,21 +110,23 @@ int main(int argc, char *argv[])
 	std::cout<<"input u"<<std::endl;
 	for (int i=0; i<u_size; i++)
 	{
-		std::cout<<setw(20)<<u[i][0];
+		std::cout<<"  "<<u[i][0];
 	}
 
+//#if 0
 	std::cout<<std::endl<<"First output "<<std::endl;
 	for (int i=0; i<out_size; i++)
 	{
 		std::cout<<setw(20)<<temp_quad_out[i][0];
 	}
+//#endif
 
 	std::cout<<std::endl;
 	std::cout<<std::endl;
 	std::cout<<"Last output "<<std::endl;
 	for (int i=0; i<out_size; i++)
 	{
-		std::cout<<setw(20)<<quad_out[i][0];
+		std::cout<<"    "<<quad_out[i][0];
 	}
 
 	std::cout<<std::endl;
