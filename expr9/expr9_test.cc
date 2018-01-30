@@ -214,7 +214,14 @@ void test ()
 	  std::vector<FullMatrix<double>> N_matrices(n_components,FullMatrix<double>(n_u,n_q));
 	  std::vector<FullMatrix<double>> phi_hat_matrices(n_components,FullMatrix<double>(n_u,n_q));
 
-	  double values_quad_old_impl[n_u];
+	  Vector<double> values_quad_old_impl(n_q);
+
+	  //Debug
+	  double v=0.1;
+	  for (unsigned int j=0; j<src_dofs.block(0).size(); ++j)
+	  {
+	        src_dofs.block(0)(j) = v++;
+	  }
 
 	  //Evaluate only on unit cell
 	  //Non MF implementation
@@ -266,6 +273,8 @@ void test ()
 		typedef  BlockVector<double> VectorType;
 		MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
 
+		mf.vmult(mf_res_vec, src_dofs);
+#if 0
 		const int n_u_per_c = n_u/n_components;
 
 		for (int i=0; i<n_u; i++)
@@ -286,9 +295,9 @@ void test ()
 				phi_hat_matrices[c](i,q) = values_quad_new_impl[c*n_q+q][0];
 			}
 		}
+#endif
 	  }
-
-
+#if 0
     	std::cout<<"Quad poitns are"<<std::endl;
     	for (unsigned int d=0; d<dim; d++)
     	{
@@ -360,6 +369,26 @@ void test ()
     		}
     	}
     	std::cout<<" Final result : "<<((res==true)?"pass ": "fail ")<<std::endl<<std::endl;
+#endif
+
+    for (int c=0;c<n_components;c++)
+    {
+  	  N_matrices[c].Tvmult(values_quad_old_impl,src_dofs.block(0));
+  	  for (auto &v:values_quad_old_impl)
+  	  {
+  		  std::cout<<v<<std::endl;
+  	  }
+    }
+
+  	std::cout<<std::endl;
+
+  	for (int c=0; c<n_components;c++)
+	{
+  		for (int q=0; q<n_q; q++)
+		{
+  			std::cout<<values_quad_new_impl[c*n_q+q][0]<<std::endl;
+		}
+	}
 }
 
 
