@@ -7,9 +7,9 @@
 // This is an experiment to validate my implementation by using existing implementation of dealii RT elements
 //so that functional bugs are removed
 //The code base is adapted from matrix_vector_stokes.cc and changed to RT
-//This is an extension of expr9 and i want to ensure that gradient and hessian evaluation on unit cell match
-//just like quad point evaluations
-//REMARK: All gradients are coming out as zero. Not able to test this functionality now
+//This code works, and it shows that RT poly evaluation from dealii and MF RT evaluation for quad values match
+//This supports only dim=2 as of now because dealii RT tensor mapping table needs to be created for dim=3
+//As a backup I stop and store this test here
 /////////////////
 
 #include "tests.h"
@@ -111,7 +111,7 @@ void unit_cell_mesh (Triangulation<2> &tria,
 }
 
 const int n_array_elements = VectorizedArray<double>::n_array_elements;
-const VectorizedArray<double> *values_grad_new_impl = nullptr;
+const VectorizedArray<double> *values_quad_new_impl = nullptr;
 
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
@@ -143,9 +143,9 @@ public:
       {
         velocity.reinit (cell);
         velocity.read_dof_values (src.block(0));
-        velocity.evaluate (false,true,false);
+        velocity.evaluate (true,false,false);
         //Debug
-        values_grad_new_impl = velocity.begin_gradients();
+        values_quad_new_impl = velocity.begin_values();
       }
 
     //std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
@@ -214,9 +214,7 @@ void test ()
 	  std::vector<FullMatrix<double>> N_matrices(n_components,FullMatrix<double>(n_u,n_q));
 	  std::vector<FullMatrix<double>> phi_hat_matrices(n_components,FullMatrix<double>(n_u,n_q));
 
-	  std::vector<std::vector<FullMatrix<double>>> D_matrices(dim,N_matrices);
-	  std::vector<std::vector<FullMatrix<double>>> D_phi_hat_matrices(dim,phi_hat_matrices);
-
+	  double values_quad_old_impl[n_u];
 
 	  //Evaluate only on unit cell
 	  //Non MF implementation
@@ -227,8 +225,8 @@ void test ()
 				dynamic_cast<const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim>*>(&fe_u);
 
 		//Evaluate basis functions on these point
-		std::vector<Tensor<1,dim>> unused1;
-		std::vector<Tensor<2,dim>> poly_grads(n_u);
+		std::vector<Tensor<1,dim>> poly_values(n_u);
+		std::vector<Tensor<2,dim>> unused2;
 		std::vector<Tensor<3,dim>> unused3;
 		std::vector<Tensor<4,dim>> unused4;
 		std::vector<Tensor<5,dim>> unused5;
@@ -236,15 +234,12 @@ void test ()
     	for (unsigned int q=0; q<n_q; ++q)
     	{
    			Point<dim> p = quadrature_formula.get_points()[q];
-			fe_poly->poly_space.compute(p,unused1,poly_grads,unused3,unused4,unused5);
+			fe_poly->poly_space.compute(p,poly_values,unused2,unused3,unused4,unused5);
 			for (int i=0;i<n_u;i++)
 			{
 				for (int c=0; c<n_components; c++)
 				{
-					for (int d=0; d>dim; d++)
-					{
-						D_matrices[d][c](i,q) = poly_grads[i][c][d];
-					}
+					N_matrices[c](i,q) = poly_values[i][c];
 				}
 			}
 		}
@@ -288,15 +283,13 @@ void test ()
 
 			for (int q=0; q<n_q; q++)
 			{
-				for (int d=0; d>dim; d++)
-				{
-					D_phi_hat_matrices[d][c](i,q) = values_grad_new_impl[c*(dim*n_q)+d*n_q+q][0];
-				}
+				phi_hat_matrices[c](i,q) = values_quad_new_impl[c*n_q+q][0];
 			}
 		}
 	  }
 
-    	std::cout<<"Quad points are"<<std::endl;
+
+    	std::cout<<"Quad poitns are"<<std::endl;
     	for (unsigned int d=0; d<dim; d++)
     	{
     		for (unsigned int q=0; q<n_q; q++)
@@ -310,21 +303,15 @@ void test ()
 
     	double tol = 1e-12;
     	bool err = false;
-
-    	int dir = 1	;
-    	std::cout<<"========================================="<<std::endl;
-    	std::cout<<"Debugging for one direction derivative only, d = "<<dir<<std::endl;
-    	std::cout<<"========================================="<<std::endl<<std::endl;
-
     	for (int c=0; c<n_components; c++)
     	{
     		std::cout<<"Component no = "<<c<<"  ========================"<<std::endl;
-    		std::cout<<"D matrix from RT raw polynomials is"<<std::endl;
+    		std::cout<<"N matrix from RT raw polynomials is"<<std::endl;
     		for (unsigned int i=0; i<n_u; i++)
     		{
     			for (unsigned int q=0; q<n_q; q++)
     			{
-    				std::cout <<std::setw(12)<<D_matrices[dir][c](i,q);
+    				std::cout <<std::setw(12)<<N_matrices[c](i,q);
     			}
     			std::cout<<std::endl;
     		}
@@ -336,7 +323,7 @@ void test ()
 
     			for (unsigned int q=0; q<n_q; q++)
     			{
-    				std::cout <<std::setw(12)<<D_phi_hat_matrices[dir][c](i,q);
+    				std::cout <<std::setw(12)<<phi_hat_matrices[c](i,q);
         		}
     			std::cout<<std::endl;
     		}
@@ -348,7 +335,7 @@ void test ()
     			err = false;
     			for (unsigned int q=0; q<n_q; q++)
     			{
-    				if (std::fabs(D_phi_hat_matrices[dir][c](i,q)-D_matrices[dir][c](i,q)) > tol)
+    				if (std::fabs(phi_hat_matrices[c](i,q)-N_matrices[c](i,q)) > tol)
     				{
     					err = true;
     					res = false;
@@ -360,12 +347,12 @@ void test ()
 					std::cout<<"Found errors in (c,basis) = ("<<c<<","<<i<<"). Comparison below (actual and MF):"<<std::endl;
 	    			for (unsigned int q=0; q<n_q; q++)
 	    			{
-	    				std::cout <<std::setw(12)<<D_matrices[dir][c](i,q);
+	    				std::cout <<std::setw(12)<<N_matrices[c](i,q);
 	        		}
 	    			std::cout<<std::endl;
 	    			for (unsigned int q=0; q<n_q; q++)
 	    			{
-	    				std::cout <<std::setw(12)<<D_phi_hat_matrices[dir][c](i,q);
+	    				std::cout <<std::setw(12)<<phi_hat_matrices[c](i,q);
 	    			}
 	    			std::cout<<std::endl;
 	    			std::cout<<"=========================="<<std::endl;
@@ -385,8 +372,8 @@ int main ()
   {
     //deallog << std::endl << "Test with doubles" << std::endl << std::endl;
     //deallog.push("2d");
-    //test<2,1>();
-    test<2,2>();
+    test<2,1>();
+    //test<2,2>();
     //test<2,3>();
     //test<2,4>();
     //deallog.pop();
