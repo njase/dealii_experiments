@@ -7,6 +7,9 @@
 // This is an experiment to validate my implementation by using existing implementation of dealii RT elements
 //so that functional bugs are removed
 //The code base is adapted from matrix_vector_stokes.cc and changed to RT
+//This code works, and it shows that RT poly evaluation from dealii and MF RT evaluation for quad values match
+//This supports only dim=2 as of now because dealii RT tensor mapping table needs to be created for dim=3
+//As a backup I stop and store this test here
 /////////////////
 
 #include "tests.h"
@@ -174,6 +177,8 @@ private:
 template <int dim, int fe_degree, int n_components=dim>
 void test ()
 {
+	bool res = true;
+
 	  Triangulation<dim>   triangulation;
 	  unit_cell_mesh(triangulation);
 
@@ -211,7 +216,6 @@ void test ()
 
 	  double values_quad_old_impl[n_u];
 
-
 	  //Evaluate only on unit cell
 	  //Non MF implementation
 	  {
@@ -234,12 +238,14 @@ void test ()
 			for (int i=0;i<n_u;i++)
 			{
 				for (int c=0; c<n_components; c++)
+				{
 					N_matrices[c](i,q) = poly_values[i][c];
+				}
 			}
 		}
 
 	  }
-
+	  std::cout<<std::endl;
 
 	  //MF implementation
 	  {
@@ -262,7 +268,7 @@ void test ()
 
 		const int n_u_per_c = n_u/n_components;
 
-		for (int i=0; i<6; i++)
+		for (int i=0; i<n_u; i++)
 		{
 			int c = i/n_u_per_c;
 
@@ -278,33 +284,6 @@ void test ()
 			for (int q=0; q<n_q; q++)
 			{
 				phi_hat_matrices[c](i,q) = values_quad_new_impl[c*n_q+q][0];
-				//phi_hat_matrices[c](i,q) = values_quad_new_impl[q][0];
-			}
-		}
-
-		//for (int i=0; i<n_u; i++)
-		for (int i=6; i<12; i++)
-		{
-			int c = i/n_u_per_c;
-
-			for (unsigned int j=0; j<src_dofs.block(0).size(); ++j)
-		      {
-		         src_dofs.block(0)(j) = 0;
-		      }
-
-
-			src_dofs.block(0)(i) = 1.0;
-			//Debug
-			//std::cout<<std::endl;
-			//for (int n=0;n<n_u;n++)
-			//	std::cout<<std::setw(10)<<src_dofs.block(0)(n);
-			//std::cout<<std::endl;
-			mf.vmult(mf_res_vec, src_dofs);
-
-			for (int q=0; q<n_q; q++)
-			{
-				phi_hat_matrices[c](i,q) = values_quad_new_impl[c*n_q+q][0];
-				//phi_hat_matrices[c](i,q) = values_quad_new_impl[q][0];
 			}
 		}
 	  }
@@ -322,6 +301,8 @@ void test ()
     	std::cout<<std::endl;
     	std::cout<<std::endl;
 
+    	double tol = 1e-12;
+    	bool err = false;
     	for (int c=0; c<n_components; c++)
     	{
     		std::cout<<"Component no = "<<c<<"  ========================"<<std::endl;
@@ -339,14 +320,46 @@ void test ()
     		std::cout<<"N matrix from MF is"<<std::endl;
     		for (unsigned int i=0; i<n_u; i++)
     		{
+
     			for (unsigned int q=0; q<n_q; q++)
     			{
     				std::cout <<std::setw(12)<<phi_hat_matrices[c](i,q);
-    			}
+        		}
     			std::cout<<std::endl;
     		}
     		std::cout<<std::endl<<std::endl;
+
+
+    		for (unsigned int i=0; i<n_u; i++)
+    		{
+    			err = false;
+    			for (unsigned int q=0; q<n_q; q++)
+    			{
+    				if (std::fabs(phi_hat_matrices[c](i,q)-N_matrices[c](i,q)) > tol)
+    				{
+    					err = true;
+    					res = false;
+    					break;
+    				}
+    			}
+				if (err)
+				{
+					std::cout<<"Found errors in (c,basis) = ("<<c<<","<<i<<"). Comparison below (actual and MF):"<<std::endl;
+	    			for (unsigned int q=0; q<n_q; q++)
+	    			{
+	    				std::cout <<std::setw(12)<<N_matrices[c](i,q);
+	        		}
+	    			std::cout<<std::endl;
+	    			for (unsigned int q=0; q<n_q; q++)
+	    			{
+	    				std::cout <<std::setw(12)<<phi_hat_matrices[c](i,q);
+	    			}
+	    			std::cout<<std::endl;
+	    			std::cout<<"=========================="<<std::endl;
+				}
+    		}
     	}
+    	std::cout<<" Final result : "<<((res==true)?"pass ": "fail ")<<std::endl<<std::endl;
 }
 
 
@@ -363,10 +376,6 @@ int main ()
     //test<2,2>();
     //test<2,3>();
     //test<2,4>();
-    //deallog.pop();
-    //deallog.push("3d");
-    //test<3,1>();
-    //test<3,2>();
     //deallog.pop();
   }
   deallog.detach();
