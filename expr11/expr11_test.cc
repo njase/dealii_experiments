@@ -7,6 +7,7 @@
 // This is an experiment to validate my implementation by using existing implementation of dealii RT elements
 //so that functional bugs are removed
 //The code base is adapted from matrix_vector_stokes.cc and changed to RT
+// Step by step tests: Step 1
 /////////////////
 
 #include "tests.h"
@@ -96,11 +97,11 @@ void test_mesh (Triangulation<2> &tria,
 
   std::vector<Point<dim> > points (4);
 
-  // 1. cube cell
-  points[0] = Point<dim> (0, 0);
-  points[1] = Point<dim> (0, 1);
-  points[2] = Point<dim> (1,0);
-  points[3] = Point<dim> (1,1);
+  // 3. parallelogram cell
+  points[0] = Point<dim> (3., 0);
+  points[1] = Point<dim> (3., 1);
+  points[2] = Point<dim> (5., 1.);
+  points[3] = Point<dim> (5., 2.);
 
 
   std::vector<CellData<dim> > cells(1);
@@ -111,6 +112,8 @@ void test_mesh (Triangulation<2> &tria,
 
   tria.create_triangulation (points, cells, SubCellData());
 }
+
+VectorizedArray<double> *gradients_mf;
 
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
@@ -145,28 +148,30 @@ public:
         velocity.reinit (cell);
         velocity.read_dof_values (src.block(0));
         velocity.evaluate (false,true,false);
-        pressure.reinit (cell);
-        pressure.read_dof_values (src.block(1));
-        pressure.evaluate (true,false,false);
+        //pressure.reinit (cell);
+        //pressure.read_dof_values (src.block(1));
+        //pressure.evaluate (true,false,false);
 
         for (unsigned int q=0; q<velocity.n_q_points; ++q)
           {
             Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
-            vector_t pres = pressure.get_value(q);
-            vector_t div = -trace(grad_u);
-            pressure.submit_value   (div, q);
+            //vector_t pres = pressure.get_value(q);
+            //vector_t div = -trace(grad_u);
+            //pressure.submit_value   (div, q);
 
             // subtract p * I
-            for (unsigned int d=0; d<dim; ++d)
-              grad_u[d][d] -= pres;
+            //for (unsigned int d=0; d<dim; ++d)
+            //  grad_u[d][d] -= pres;
 
             velocity.submit_gradient(grad_u, q);
           }
 
-        velocity.integrate (false,true);
-        velocity.distribute_local_to_global (dst.block(0));
-        pressure.integrate (true,false);
-        pressure.distribute_local_to_global (dst.block(1));
+        gradients_mf = velocity.begin_gradients();
+
+        //velocity.integrate (false,true);
+        //velocity.distribute_local_to_global (dst.block(0));
+        //pressure.integrate (true,false);
+        //pressure.distribute_local_to_global (dst.block(1));
       }
 
     //std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
@@ -197,7 +202,7 @@ private:
 };
 
 
-template <int dim, int fe_degree>
+template <int dim, int fe_degree, int n_components=dim>
 void test ()
 {
 	  Triangulation<dim>   triangulation;
@@ -265,16 +270,22 @@ void test ()
 	  dst_vec.reinit(system_rhs);
 
 	  // this is from step-22
-	  {
+	  //{
+
 	    QGauss<dim>   quadrature_formula(fe_degree+2);
 
 	    FEValues<dim> fe_values (fe, quadrature_formula,
 	                             update_values    |
 	                             update_JxW_values |
-	                             update_gradients);
+	                             update_gradients| update_inverse_jacobians);
 
 	    const unsigned int   dofs_per_cell   = fe.dofs_per_cell;
 	    const unsigned int   n_q_points      = quadrature_formula.size();
+
+	    //Matrix of gradient vectors
+	    std::vector<FullMatrix<double>> test_phi_grad_u_matrix(dim,FullMatrix<double>(n_q_points, n_u));
+	    Vector<double> test_system_rhs(n_u);
+ 	    Vector<double> test_grad_evaluation_results(n_q_points);
 
 	    FullMatrix<double>   local_matrix (dofs_per_cell, dofs_per_cell);
 
@@ -297,13 +308,19 @@ void test ()
 
 	        for (unsigned int q=0; q<n_q_points; ++q)
 	          {
-	            for (unsigned int k=0; k<dofs_per_cell; ++k)
+	            for (unsigned int k=0; k<n_u/*dofs_per_cell*/; ++k)
 	              {
 	                phi_grad_u[k] = fe_values[velocities].gradient (k, q);
-	                div_phi_u[k]  = fe_values[velocities].divergence (k, q);
-	                phi_p[k]      = fe_values[pressure].value (k, q);
+	                //div_phi_u[k]  = fe_values[velocities].divergence (k, q);
+	                //phi_p[k]      = fe_values[pressure].value (k, q);
+
+	                for (int d=0; d<dim; d++)
+	                {
+	                	test_phi_grad_u_matrix[d](q,k) = phi_grad_u[k][d][0]; //last zero is due to rank-1 tensor value
+	                }
 	              }
 
+#if 0
 	            for (unsigned int i=0; i<dofs_per_cell; ++i)
 	              {
 	                for (unsigned int j=0; j<=i; ++j)
@@ -312,9 +329,13 @@ void test ()
 	                                          - div_phi_u[i] * phi_p[j]
 	                                          - phi_p[i] * div_phi_u[j])
 	                                         * fe_values.JxW(q);
+
+
 	                  }
 	              }
+#endif
 	          }
+#if 0
 	        for (unsigned int i=0; i<dofs_per_cell; ++i)
 	          for (unsigned int j=i+1; j<dofs_per_cell; ++j)
 	            local_matrix(i,j) = local_matrix(j,i);
@@ -323,9 +344,9 @@ void test ()
 	        constraints.distribute_local_to_global (local_matrix,
 	                                                local_dof_indices,
 	                                                system_matrix);
+#endif
 	      }
-	  }
-
+	  //}
 
 	  // first system_rhs with random numbers
 	  for (unsigned int i=0; i<2; ++i)
@@ -333,10 +354,16 @@ void test ()
 	      {
 	        const double val = -1. + 2.*random_value<double>();
 	        system_rhs.block(i)(j) = val;
+	        if (i==0)
+	        	test_system_rhs[j] = val;
 	      }
 
+#if 0
 	  system_matrix.vmult (solution, system_rhs);
+#endif
 
+	  //Extend it to all dimensions later after some tests
+	  test_phi_grad_u_matrix[0].vmult(test_grad_evaluation_results,test_system_rhs);
 
 	  // setup matrix-free structure
 	  {
@@ -356,11 +383,33 @@ void test ()
 
 
 	  //Convert moment dofs to nodal dofs for RT tensor product
-	  fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
+	  //fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
 
 	  typedef  BlockVector<double> VectorType;
 	  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-	  mf.vmult(dst_vec, src_vec);
+	  mf.vmult(dst_vec, system_rhs);
+	  //mf.vmult(dst_vec, src_vec);
+
+	  std::cout<<"Results from non MF gradient eval for d=0"<<std::endl;
+	  for (int i=0; i<n_q_points; i++)
+	  {
+		  std::cout<<std::setw(10)<<test_grad_evaluation_results[i];
+	  }
+
+	  std::cout<<std::endl;
+
+	  std::cout<<"Results from MF gradient eval for d=0"<<std::endl;
+	  int d=0;
+	  for (int c=0; c<n_components; c++)
+	  {
+		  for (int q=0; q<n_q_points; q++)
+		  {
+			  std::cout<<std::setw(10)<<gradients_mf[c*(dim*n_q_points)+d*n_q_points+q][0];
+		  }
+		  std::cout<<std::endl;
+	  }
+	  std::cout<<std::endl;
+
 
 #if 0 //open later
 	  //Debug
