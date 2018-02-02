@@ -38,6 +38,7 @@
 #include <complex>
 #include <vector>
 
+using namespace dealii;
 
 //More basic tests
 //Comparison of general output of FEValues (MatrixFree)
@@ -97,12 +98,20 @@ void test_mesh (Triangulation<2> &tria,
 
   std::vector<Point<dim> > points (4);
 
+#if 0
   // 3. parallelogram cell
   points[0] = Point<dim> (3., 0);
   points[1] = Point<dim> (3., 1);
   points[2] = Point<dim> (5., 1.);
   points[3] = Point<dim> (5., 2.);
+#endif
 
+  //Lets first confirm on unit cell
+  // 1. cube cell
+  points[0] = Point<dim> (0, 0);
+  points[1] = Point<dim> (0, 1);
+  points[2] = Point<dim> (1,0);
+  points[3] = Point<dim> (1,1);
 
   std::vector<CellData<dim> > cells(1);
   cells[0].vertices[0] = 0;
@@ -205,6 +214,90 @@ private:
 template <int dim, int fe_degree, int n_components=dim>
 void test ()
 {
+#if 0
+	  std::array<std::vector<unsigned int>,dim> tensor_pols_mapping_inv;
+	  std::array<std::vector<std::vector<unsigned int>>,dim> tensor_pols_grad_mapping_inv;
+
+	for (int c=0; c<n_components; c++)
+		tensor_pols_grad_mapping_inv[c].resize(n_components);
+
+	const unsigned int n_sub = 6;
+
+	for (int c=0;c<n_components;c++)
+	{
+		tensor_pols_mapping_inv[c].resize(n_sub);
+		for (int d=0; d<dim; d++)
+		{
+			tensor_pols_grad_mapping_inv[c][d].resize(n_sub);
+		}
+	}
+
+	////Fill for values
+	//For first component, mapping is 1:1
+	for (int i=0; i<n_sub; i++)
+		tensor_pols_mapping_inv[0][i] = i;
+
+	//FIXME This is only for dim=2
+	//Actual indices are locations corresponding to transposed matrix of calculated indices
+	const unsigned int ny = fe_degree+2, nx=fe_degree+1; //no of dofs in each direction
+	if ((nx*ny) != n_sub)
+		Assert(false, ExcInternalError());
+
+	int k=0, k_act=0;
+	//Store the indices cooresponding to matrix transpose
+	for (int i=0; i<ny; i++)
+	{
+		for (int j=0; j<nx; j++)
+		{
+			k_act = i*nx+j;
+			k = j*ny+i;
+			tensor_pols_mapping_inv[1][k_act] = k;
+		}
+	}
+
+	//Fill for derivatives [comp][dir]  FIXME: This is currently only for dim=2
+	tensor_pols_grad_mapping_inv[0][0] = tensor_pols_mapping_inv[0];
+	tensor_pols_grad_mapping_inv[0][1] = tensor_pols_mapping_inv[0];
+
+	tensor_pols_grad_mapping_inv[1][0] = tensor_pols_mapping_inv[1];
+	tensor_pols_grad_mapping_inv[1][1] = tensor_pols_mapping_inv[1]; //Utilities::invert_permutation(tensor_pols_mapping_inv[1]);
+
+	std::cout<<"tensor_pols_mapping_inv[0]"<<std::endl;
+	for (int i=0; i<n_sub;i++)
+	{
+		std::cout<<tensor_pols_mapping_inv[0][i]<<"    "<<std::endl;
+	}
+	std::cout<<std::endl;
+
+
+	std::cout<<"tensor_pols_mapping_inv[1]"<<std::endl;
+	for (int i=0; i<n_sub;i++)
+	{
+		std::cout<<tensor_pols_mapping_inv[1][i]<<"    "<<std::endl;
+	}
+	std::cout<<std::endl;
+
+
+	std::cout<<"tensor_pols_grad_mapping_inv[1][0"<<std::endl;
+	for (int i=0; i<n_sub;i++)
+	{
+		std::cout<<tensor_pols_grad_mapping_inv[1][0][i]<<"    "<<std::endl;
+	}
+	std::cout<<std::endl;
+
+	std::cout<<"tensor_pols_grad_mapping_inv[1][1]"<<std::endl;
+	for (int i=0; i<n_sub;i++)
+	{
+		std::cout<<tensor_pols_grad_mapping_inv[1][1][i]<<"    "<<std::endl;
+	}
+		std::cout<<std::endl;
+
+
+	return;
+#endif
+	////////////////////////////////
+
+
 	  Triangulation<dim>   triangulation;
 	  test_mesh(triangulation);
 #if 0
@@ -283,9 +376,19 @@ void test ()
 	    const unsigned int   n_q_points      = quadrature_formula.size();
 
 	    //Matrix of gradient vectors
-	    std::vector<FullMatrix<double>> test_phi_grad_u_matrix(dim,FullMatrix<double>(n_q_points, n_u));
+	    std::vector<FullMatrix<double>> rt_test_phi_grad_u_matrix(dim,FullMatrix<double>(n_u,n_q_points));
+	    std::vector<FullMatrix<double>> poly_test_phi_grad_u_matrix(dim,FullMatrix<double>(n_u,n_q_points));
+	    int test_c = 0; //Test component number
 	    Vector<double> test_system_rhs(n_u);
  	    Vector<double> test_grad_evaluation_results(n_q_points);
+ 	    const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim> *fe_poly =
+				dynamic_cast<const FE_PolyTensor<PolynomialsRaviartThomas<dim>,dim,dim>*>(&fe_u);
+		//Evaluate basis functions on these point
+		std::vector<Tensor<1,dim>> unused1;
+		std::vector<Tensor<2,dim>> poly_grads(n_u);
+		std::vector<Tensor<3,dim>> unused3;
+		std::vector<Tensor<4,dim>> unused4;
+		std::vector<Tensor<5,dim>> unused5;
 
 	    FullMatrix<double>   local_matrix (dofs_per_cell, dofs_per_cell);
 
@@ -308,6 +411,8 @@ void test ()
 
 	        for (unsigned int q=0; q<n_q_points; ++q)
 	          {
+	        	Point<dim> p = quadrature_formula.get_points()[q];
+	        	fe_poly->poly_space.compute(p,unused1,poly_grads,unused3,unused4,unused5);
 	            for (unsigned int k=0; k<n_u/*dofs_per_cell*/; ++k)
 	              {
 	                phi_grad_u[k] = fe_values[velocities].gradient (k, q);
@@ -316,7 +421,8 @@ void test ()
 
 	                for (int d=0; d<dim; d++)
 	                {
-	                	test_phi_grad_u_matrix[d](q,k) = phi_grad_u[k][d][0]; //last zero is due to rank-1 tensor value
+	                	rt_test_phi_grad_u_matrix[d](k,q) = phi_grad_u[k][test_c][d];
+	                	poly_test_phi_grad_u_matrix[d](k,q) = poly_grads[k][test_c][d];
 	                }
 	              }
 
@@ -363,7 +469,7 @@ void test ()
 #endif
 
 	  //Extend it to all dimensions later after some tests
-	  test_phi_grad_u_matrix[0].vmult(test_grad_evaluation_results,test_system_rhs);
+	  //test_phi_grad_u_matrix[0].vmult(test_grad_evaluation_results,test_system_rhs);
 
 	  // setup matrix-free structure
 	  {
@@ -383,12 +489,11 @@ void test ()
 
 
 	  //Convert moment dofs to nodal dofs for RT tensor product
-	  //fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
+	  fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
 
 	  typedef  BlockVector<double> VectorType;
 	  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-	  mf.vmult(dst_vec, system_rhs);
-	  //mf.vmult(dst_vec, src_vec);
+	  mf.vmult(dst_vec, src_vec);
 
 	  std::cout<<"Results from non MF gradient eval for d=0"<<std::endl;
 	  for (int i=0; i<n_q_points; i++)
@@ -433,6 +538,103 @@ void test ()
 	  deallog.detach();
 
 	  std::cout<<" Final result : "<<((result==true)?"pass ": "fail ")<<std::endl<<std::endl;
+#endif
+		std::cout<<"Component no = "<<test_c<<"  ========================"<<std::endl;
+
+#if 0
+		std::cout<<"Matrix from RT d = 0 is"<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int q=0; q<n_q_points; q++)
+			{
+				std::cout <<std::setw(12)<<rt_test_phi_grad_u_matrix[0](i,q);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
+#endif
+
+		std::cout<<"Matrix from poly RT d = 0 is"<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int q=0; q<n_q_points; q++)
+			{
+				std::cout <<std::setw(12)<<poly_test_phi_grad_u_matrix[0](i,q);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
+
+		std::cout<<"Matrix from poly RT d = 1 is"<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int q=0; q<n_q_points; q++)
+			{
+				std::cout <<std::setw(12)<<poly_test_phi_grad_u_matrix[1](i,q);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
+
+#if 0
+		FullMatrix<double> temp(n_u,n_q_points);
+		fe_u.inverse_node_matrix.Tmmult(temp,poly_test_phi_grad_u_matrix[0]);
+
+		std::cout<<"Matrix from Processed poly RT d = 0 is"<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int q=0; q<n_q_points; q++)
+			{
+				std::cout <<std::setw(12)<<temp(i,q);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
+#endif
+
+
+#if 0
+		FullMatrix<double> X(n_u,n_u);
+		X.invert(fe_u.inverse_node_matrix);
+
+		std::cout<<"Matrix from RT d = 0 is"<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int q=0; q<n_q_points; q++)
+			{
+				std::cout <<std::setw(12)<<test_phi_grad_u_matrix[0](i,q);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
+
+		FullMatrix<double> temp(n_u,n_q_points);
+		X.Tmmult(temp,test_phi_grad_u_matrix[0]);
+
+		std::cout<<"After processing is "<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int q=0; q<n_q_points; q++)
+			{
+				std::cout <<std::setw(12)<<temp(i,q);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
+#endif
+
+#if 0
+
+		std::cout<<"Matrix from RT d = 1 is"<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int q=0; q<n_q_points; q++)
+			{
+				std::cout <<std::setw(12)<<test_phi_grad_u_matrix[1](i,q);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
 #endif
 }
 
