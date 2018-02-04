@@ -32,6 +32,10 @@
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/numerics/vector_tools.h>
 
+#include <deal.II/base/vectorization.h>
+#include <deal.II/matrix_free/evaluation_kernels.h>
+
+
 #include "create_mesh.h"
 
 #include <iostream>
@@ -148,8 +152,9 @@ public:
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
     typedef VectorizedArray<Number> vector_t;
-    FEEvaluationGen<FE_RaviartThomas<dim>,degree_p+2,dim,degree_p+1,Number> velocity (data, 0);
-    FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number> pressure (data, 1);
+    FEEvaluationGen<FE_RaviartThomas<dim>,degree_p+2,dim,degree_p,Number> velocity (data, 0);
+    //FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p,Number> pressure (data, 1);
+    FEEvaluation<dim,degree_p,degree_p+2,1,Number> pressure (data, 1); //For scalar elements, use orig FEEvaluation
 
 
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
@@ -163,7 +168,7 @@ public:
 
         for (unsigned int q=0; q<velocity.n_q_points; ++q)
           {
-            Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
+            //Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
             //vector_t pres = pressure.get_value(q);
             //vector_t div = -trace(grad_u);
             //pressure.submit_value   (div, q);
@@ -172,7 +177,7 @@ public:
             //for (unsigned int d=0; d<dim; ++d)
             //  grad_u[d][d] -= pres;
 
-            velocity.submit_gradient(grad_u, q);
+            //velocity.submit_gradient(grad_u, q);
           }
 
         gradients_mf = velocity.begin_gradients();
@@ -215,89 +220,75 @@ template <int dim, int fe_degree, int n_components=dim>
 void test ()
 {
 #if 0
-	  std::array<std::vector<unsigned int>,dim> tensor_pols_mapping_inv;
-	  std::array<std::vector<std::vector<unsigned int>>,dim> tensor_pols_grad_mapping_inv;
+	constexpr int fe_deg_x2 = 2;
+	constexpr int fe_deg_y2 = 1;
+	constexpr int n_q_points_1d = fe_degree+2;
+	using VecArr = VectorizedArray<double>;
+	VecArr N0[9] = {{0.6872,0.6872}, {0,0}, {-0.0872,-0.0872},
+				 {0.3999,0.3999}, {1,1}, {0.3999,0.3999},
+				 {-0.0872,-0.0872},{0,0}, {0.6872,0.6872}
+				 };
+	VecArr N1[6] = {{0.8872,0.8872}, {0.5,0.5}, {0.11270,0.11270},
+				 {0.11270,0.11270}, {0.5,0.5}, {0.8872,0.8872}
+				 };
+	VecArr D0[9] = {
+			{-2.5491,-2.5491}, {-1,-1}, {0.5491,0.5491},
+			{3.0983,3.0983}, {0,0}, {-3.098,-3.098},
+			{-0.5491,-0.5491}, {1,1}, {2.5491,2.5491}
+	};
 
-	for (int c=0; c<n_components; c++)
-		tensor_pols_grad_mapping_inv[c].resize(n_components);
+	VecArr D1[6] = {
+			{-1,-1}, {-1,-1}, {-1,-1},
+			{1,1}, {1,1}, {1,1}
+	};
 
-	const unsigned int n_sub = 6;
+	VecArr values_dofs[2][6] = {
+				{{1,1},{2,2},{3,3},{4,4},{5,5},{6,6}},
+				{{7,7},{8,8},{9,9},{10,10},{11,11},{12,12}}
+	};
+	VecArr temp1[100];
+	VecArr gradients_quad[2][2][9];
 
-	for (int c=0;c<n_components;c++)
-	{
-		tensor_pols_mapping_inv[c].resize(n_sub);
-		for (int d=0; d<dim; d++)
-		{
-			tensor_pols_grad_mapping_inv[c][d].resize(n_sub);
-		}
-	}
+	//c=0
+	// grad x
+	dealii::internal::apply_anisotropic<dim,fe_deg_x2,n_q_points_1d,VecArr,0,true,false,fe_deg_y2>(D0,values_dofs[0], temp1);
+	dealii::internal::apply_anisotropic<dim,fe_deg_y2,n_q_points_1d,VecArr,1,true,false,fe_deg_x2>(N1,temp1,gradients_quad[0][0]);
 
-	////Fill for values
-	//For first component, mapping is 1:1
-	for (int i=0; i<n_sub; i++)
-		tensor_pols_mapping_inv[0][i] = i;
+	dealii::internal::apply_anisotropic<dim, fe_deg_x2, n_q_points_1d,VecArr,0,true,false,fe_deg_y2>(N0,values_dofs[0], temp1);
+	dealii::internal::apply_anisotropic<dim,fe_deg_y2,n_q_points_1d,VecArr,1,true,false,fe_deg_x2>(D1,temp1,gradients_quad[0][1]);
 
-	//FIXME This is only for dim=2
-	//Actual indices are locations corresponding to transposed matrix of calculated indices
-	const unsigned int ny = fe_degree+2, nx=fe_degree+1; //no of dofs in each direction
-	if ((nx*ny) != n_sub)
-		Assert(false, ExcInternalError());
+	//c=1
+	constexpr int fe_deg_x2_1 = 1;
+	constexpr int fe_deg_y2_1 = 2;
+	dealii::internal::apply_anisotropic<dim,fe_deg_x2_1,n_q_points_1d,VecArr,0,true,false,fe_deg_y2_1>(D1,values_dofs[1], temp1);
+	dealii::internal::apply_anisotropic<dim,fe_deg_y2_1,n_q_points_1d,VecArr,1,true,false,fe_deg_x2_1>(N0,temp1,gradients_quad[1][0]);
 
-	int k=0, k_act=0;
-	//Store the indices cooresponding to matrix transpose
-	for (int i=0; i<ny; i++)
-	{
-		for (int j=0; j<nx; j++)
-		{
-			k_act = i*nx+j;
-			k = j*ny+i;
-			tensor_pols_mapping_inv[1][k_act] = k;
-		}
-	}
-
-	//Fill for derivatives [comp][dir]  FIXME: This is currently only for dim=2
-	tensor_pols_grad_mapping_inv[0][0] = tensor_pols_mapping_inv[0];
-	tensor_pols_grad_mapping_inv[0][1] = tensor_pols_mapping_inv[0];
-
-	tensor_pols_grad_mapping_inv[1][0] = tensor_pols_mapping_inv[1];
-	tensor_pols_grad_mapping_inv[1][1] = tensor_pols_mapping_inv[1]; //Utilities::invert_permutation(tensor_pols_mapping_inv[1]);
-
-	std::cout<<"tensor_pols_mapping_inv[0]"<<std::endl;
-	for (int i=0; i<n_sub;i++)
-	{
-		std::cout<<tensor_pols_mapping_inv[0][i]<<"    "<<std::endl;
-	}
-	std::cout<<std::endl;
+	dealii::internal::apply_anisotropic<dim, fe_deg_x2_1, n_q_points_1d,VecArr,0,true,false,fe_deg_y2_1>(N1,values_dofs[1], temp1);
+	dealii::internal::apply_anisotropic<dim,fe_deg_y2_1,n_q_points_1d,VecArr,1,true,false,fe_deg_x2_1>(D0,temp1,gradients_quad[1][1]);
 
 
-	std::cout<<"tensor_pols_mapping_inv[1]"<<std::endl;
-	for (int i=0; i<n_sub;i++)
-	{
-		std::cout<<tensor_pols_mapping_inv[1][i]<<"    "<<std::endl;
-	}
-	std::cout<<std::endl;
+	  std::cout<<"Results from test gradient eval are"<<std::endl;
 
-
-	std::cout<<"tensor_pols_grad_mapping_inv[1][0"<<std::endl;
-	for (int i=0; i<n_sub;i++)
-	{
-		std::cout<<tensor_pols_grad_mapping_inv[1][0][i]<<"    "<<std::endl;
-	}
-	std::cout<<std::endl;
-
-	std::cout<<"tensor_pols_grad_mapping_inv[1][1]"<<std::endl;
-	for (int i=0; i<n_sub;i++)
-	{
-		std::cout<<tensor_pols_grad_mapping_inv[1][1][i]<<"    "<<std::endl;
-	}
-		std::cout<<std::endl;
+	  for (int c=0; c<n_components; c++)
+	  {
+		  std::cout<<"=====Component = "<<c<<std::endl;
+		  for (int d=0; d<dim; d++)
+		  {
+			  std::cout<<"==dim = "<<d<<"    ";
+			  for (int q=0; q<9; q++)
+			  {
+				  std::cout<<std::setw(10)<<gradients_quad[c][d][q][0];
+			  }
+			  std::cout<<std::endl;
+		  }
+		  std::cout<<std::endl;
+	  }
+	  std::cout<<std::endl;
 
 
 	return;
 #endif
-	////////////////////////////////
-
-
+	///////////////////
 	  Triangulation<dim>   triangulation;
 	  test_mesh(triangulation);
 #if 0
@@ -415,13 +406,15 @@ void test ()
 	        	fe_poly->poly_space.compute(p,unused1,poly_grads,unused3,unused4,unused5);
 	            for (unsigned int k=0; k<n_u/*dofs_per_cell*/; ++k)
 	              {
-	                phi_grad_u[k] = fe_values[velocities].gradient (k, q);
+	                phi_grad_u[k] = fe_values[velocities].gradient(k, q);
 	                //div_phi_u[k]  = fe_values[velocities].divergence (k, q);
 	                //phi_p[k]      = fe_values[pressure].value (k, q);
 
 	                for (int d=0; d<dim; d++)
 	                {
-	                	rt_test_phi_grad_u_matrix[d](k,q) = phi_grad_u[k][test_c][d];
+	                	//rt_test_phi_grad_u_matrix[d](k,q) = phi_grad_u[k][test_c][d];
+	                	/// The below line gives result in correct order. but above line does not
+	                	rt_test_phi_grad_u_matrix[d](k,q) = fe_u.shape_grad_component(k,p,test_c)[d];
 	                	poly_test_phi_grad_u_matrix[d](k,q) = poly_grads[k][test_c][d];
 	                }
 	              }
@@ -455,11 +448,13 @@ void test ()
 	  //}
 
 	  // first system_rhs with random numbers
+	    float t = 1.0f;
 	  for (unsigned int i=0; i<2; ++i)
 	    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
 	      {
+	    	//all zeros
 	        const double val = -1. + 2.*random_value<double>();
-	        system_rhs.block(i)(j) = val;
+	        system_rhs.block(i)(j) = t++; //val;
 	        if (i==0)
 	        	test_system_rhs[j] = val;
 	      }
@@ -489,27 +484,36 @@ void test ()
 
 
 	  //Convert moment dofs to nodal dofs for RT tensor product
-	  fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
+	  //fe_u.inverse_node_matrix.vmult(src_vec.block(0),system_rhs.block(0));
+	  src_vec = system_rhs;
+	  //src_vec.block(0)[0] = 1.0;
 
 	  typedef  BlockVector<double> VectorType;
 	  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
 	  mf.vmult(dst_vec, src_vec);
 
-	  std::cout<<"Results from non MF gradient eval for d=0"<<std::endl;
-	  for (int i=0; i<n_q_points; i++)
+
+	  std::cout<<"Input src_vector is "<<std::endl;
+	  for (int i=0; i<n_u; i++)
 	  {
-		  std::cout<<std::setw(10)<<test_grad_evaluation_results[i];
+		  std::cout<<std::setw(10)<<src_vec.block(0)[i];
 	  }
 
 	  std::cout<<std::endl;
 
-	  std::cout<<"Results from MF gradient eval for d=0"<<std::endl;
-	  int d=0;
+	  std::cout<<"Results from MF gradient eval are"<<std::endl;
+
 	  for (int c=0; c<n_components; c++)
 	  {
-		  for (int q=0; q<n_q_points; q++)
+		  std::cout<<"=====Component = "<<c<<std::endl;
+		  for (int d=0; d<dim; d++)
 		  {
-			  std::cout<<std::setw(10)<<gradients_mf[c*(dim*n_q_points)+d*n_q_points+q][0];
+			  std::cout<<"==dim = "<<d<<"    ";
+			  for (int q=0; q<n_q_points; q++)
+			  {
+				  std::cout<<std::setw(10)<<gradients_mf[c*(dim*n_q_points)+d*n_q_points+q][0];
+			  }
+			  std::cout<<std::endl;
 		  }
 		  std::cout<<std::endl;
 	  }
@@ -541,19 +545,7 @@ void test ()
 #endif
 		std::cout<<"Component no = "<<test_c<<"  ========================"<<std::endl;
 
-#if 0
-		std::cout<<"Matrix from RT d = 0 is"<<std::endl;
-		for (unsigned int i=0; i<n_u; i++)
-		{
-			for (unsigned int q=0; q<n_q_points; q++)
-			{
-				std::cout <<std::setw(12)<<rt_test_phi_grad_u_matrix[0](i,q);
-			}
-			std::cout<<std::endl;
-		}
-		std::cout<<std::endl<<std::endl;
-#endif
-
+#if 0 //This is ok, so close now
 		std::cout<<"Matrix from poly RT d = 0 is"<<std::endl;
 		for (unsigned int i=0; i<n_u; i++)
 		{
@@ -575,8 +567,18 @@ void test ()
 			std::cout<<std::endl;
 		}
 		std::cout<<std::endl<<std::endl;
-
+#endif
 #if 0
+		act = C.phihat
+		C = X^{-T}
+		i have X^{-1}
+
+		act = Tra(inv node).phihat
+		inv node.Tmmult(act,phihat)
+#endif
+
+#if 0 //This match but row is pushed down , to debug next : I think this is due to component wise ordering
+		//..dealii somehow orders, should not matter for me.
 		FullMatrix<double> temp(n_u,n_q_points);
 		fe_u.inverse_node_matrix.Tmmult(temp,poly_test_phi_grad_u_matrix[0]);
 
@@ -590,28 +592,11 @@ void test ()
 			std::cout<<std::endl;
 		}
 		std::cout<<std::endl<<std::endl;
-#endif
 
 
-#if 0
-		FullMatrix<double> X(n_u,n_u);
-		X.invert(fe_u.inverse_node_matrix);
+		fe_u.inverse_node_matrix.Tmmult(temp,poly_test_phi_grad_u_matrix[1]);
 
-		std::cout<<"Matrix from RT d = 0 is"<<std::endl;
-		for (unsigned int i=0; i<n_u; i++)
-		{
-			for (unsigned int q=0; q<n_q_points; q++)
-			{
-				std::cout <<std::setw(12)<<test_phi_grad_u_matrix[0](i,q);
-			}
-			std::cout<<std::endl;
-		}
-		std::cout<<std::endl<<std::endl;
-
-		FullMatrix<double> temp(n_u,n_q_points);
-		X.Tmmult(temp,test_phi_grad_u_matrix[0]);
-
-		std::cout<<"After processing is "<<std::endl;
+		std::cout<<"Matrix from Processed poly RT d = 1 is"<<std::endl;
 		for (unsigned int i=0; i<n_u; i++)
 		{
 			for (unsigned int q=0; q<n_q_points; q++)
@@ -621,16 +606,26 @@ void test ()
 			std::cout<<std::endl;
 		}
 		std::cout<<std::endl<<std::endl;
-#endif
 
-#if 0
+
+
+		std::cout<<"Matrix from RT d = 0 is"<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int q=0; q<n_q_points; q++)
+			{
+				std::cout <<std::setw(12)<<rt_test_phi_grad_u_matrix[0](i,q);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
 
 		std::cout<<"Matrix from RT d = 1 is"<<std::endl;
 		for (unsigned int i=0; i<n_u; i++)
 		{
 			for (unsigned int q=0; q<n_q_points; q++)
 			{
-				std::cout <<std::setw(12)<<test_phi_grad_u_matrix[1](i,q);
+				std::cout <<std::setw(12)<<rt_test_phi_grad_u_matrix[1](i,q);
 			}
 			std::cout<<std::endl;
 		}
