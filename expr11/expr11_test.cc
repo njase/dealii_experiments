@@ -260,6 +260,23 @@ void test ()
 
 	  constraints.close ();
 
+	  	 //Debug
+
+	  		std::cout<<"Inverse Node Matrix is"<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int j=0; j<n_u; j++)
+			{
+				std::cout <<std::setw(12)<<fe_u.inverse_node_matrix(i,j);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
+
+		return;
+
+	  	  //
+
 
 	  BlockDynamicSparsityPattern dsp(2, 2);
 	  dsp.block(0, 0).reinit (n_u, n_u);

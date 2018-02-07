@@ -315,6 +315,23 @@ void test ()
 	  		std::cout<<values_quad_old_impl[c][q]<<std::setw(15)<<values_quad_new_impl[c*n_q+q][0]<<std::endl;
 		}
 	}
+
+#if 0
+	for (int c=0; c<n_components; c++)
+	{
+		std::cout<<"Component no = "<<c<<"  ========================"<<std::endl;
+		std::cout<<"N matrix from RT FE is"<<std::endl;
+		for (unsigned int i=0; i<n_u; i++)
+		{
+			for (unsigned int q=0; q<n_q; q++)
+			{
+				std::cout <<std::setw(10)<<N_matrices[c](i,q);
+			}
+			std::cout<<std::endl;
+		}
+		std::cout<<std::endl<<std::endl;
+	}
+#endif
 }
 
 
