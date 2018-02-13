@@ -10,6 +10,7 @@
 //This code works, and it shows that RT poly evaluation from dealii and MF RT evaluation for quad values match
 //This supports only dim=2 as of now because dealii RT tensor mapping table needs to be created for dim=3
 //As a backup I stop and store this test here
+//After the lkexicographic ordering etc, this test is not needed anymore
 /////////////////
 
 #include "tests.h"
