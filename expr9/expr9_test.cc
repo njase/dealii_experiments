@@ -219,11 +219,11 @@ void test ()
 	  std::vector<Vector<double>> values_quad_old_impl(n_components,Vector<double>(n_q));
 
 	  //Debug
-	  double v=0.1;
+	  double v=1.0;
 	  std::srand(std::time(nullptr));
 	  for (unsigned int j=0; j<src_dofs.block(0).size(); ++j)
 	  {
-	        src_dofs.block(0)(j) = std::rand()/static_cast<double>(RAND_MAX);//v++;
+	        src_dofs.block(0)(j) = std::rand()/static_cast<double>(RAND_MAX); //debug v++
 	  }
 
 	  //Evaluate only on unit cell
@@ -265,12 +265,13 @@ void test ()
 	                    (MatrixFree<dim>::AdditionalData::none));
 
 		//Convert moment dofs to "nodal" dofs for RT tensor product
-		fe_u.inverse_node_matrix.vmult(mod_src_dofs.block(0),src_dofs.block(0));
+		//fe_u.inverse_node_matrix.vmult(mod_src_dofs.block(0),src_dofs.block(0));
+	    //mod_src_dofs = src_dofs;
 
 		typedef  BlockVector<double> VectorType;
 		MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
 
-		mf.vmult(mf_res_vec, mod_src_dofs);
+		mf.vmult(mf_res_vec, src_dofs);
 	  }
 
     	std::cout<<"Quad points are"<<std::endl;
@@ -325,7 +326,7 @@ void test ()
 		{
 			for (unsigned int q=0; q<n_q; q++)
 			{
-				std::cout <<std::setw(10)<<N_matrices[c](i,q);
+				std::cout <<std::setw(15)<<N_matrices[c](i,q);
 			}
 			std::cout<<std::endl;
 		}
@@ -344,7 +345,7 @@ int main ()
   {
     //deallog << std::endl << "Test with doubles" << std::endl << std::endl;
     //deallog.push("2d");
-    //test<2,1>();
+    test<2,1>();
     test<2,2>();
     //test<2,3>();
     //test<2,4>();
