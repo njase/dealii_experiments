@@ -318,7 +318,7 @@ void test ()
 		}
 	}
 
-#if 0
+//#if 0
 	for (int c=0; c<n_components; c++)
 	{
 		std::cout<<"Component no = "<<c<<"  ========================"<<std::endl;
@@ -334,7 +334,7 @@ void test ()
 		}
 		std::cout<<std::endl<<std::endl;
 	}
-#endif
+//#endif
 }
 
 
