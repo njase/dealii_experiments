@@ -5,6 +5,9 @@
 // 			 - for RT elements, for all components
 //			 - compare values
 // Kind of extension of expr9 to real cell, before proeceeding with expr11
+//Manual verification is needed..and shows that for cartesian cells, results of tr(N)*u for real cells
+//matches dealii FEValues results
+//This was helpful to check that Piola transform applied in MF context is working for Values
 /////////////////
 
 #include "tests.h"
@@ -109,12 +112,12 @@ public:
         velocity.read_dof_values (src.block(0));
         velocity.evaluate (true,false,false);
 
-
         for (unsigned int q=0; q<velocity.n_q_points; ++q)
           {
             Tensor<1,dim,vector_t> val_u = velocity.get_value (q);
+            std::cout<<"value is "<<val_u[0][0]<<" and "<<val_u[1][0]<<std::endl;
 
-            velocity.submit_value(val_u, q);
+            //velocity.submit_value(val_u, q); This is required for integrtion
           }
 
         values_mf = velocity.begin_values();
@@ -217,7 +220,7 @@ void test ()
 	    FEValues<dim> fe_values (fe, quadrature_formula,
 	                             update_values    |
 	                             update_JxW_values |
-	                             update_gradients| update_inverse_jacobians);
+	                             update_gradients| update_jacobians);
 
 	    const unsigned int   dofs_per_cell   = fe.dofs_per_cell;
 	    const unsigned int   n_q_points      = quadrature_formula.size();
@@ -245,7 +248,52 @@ void test ()
 	      {
 	        fe_values.reinit (cell);
 	        local_matrix = 0;
+#if 0
+	        /////////////////Debug
+	        unsigned int q = 1;
+	        Point<dim> p = quadrature_formula.get_points()[q];
+	        std::cout<<"Point is "<<p<<std::endl;
 
+	        for (q=0; q<n_q_points; q++)
+	        {
+	        	auto jac = fe_values.jacobian(q);
+	        	auto det = jac.determinant();
+	        	std::cout<<"det is "<<det<<std::endl;
+	        }
+	        return;
+
+            for (unsigned int k=0; k<dofs_per_cell; ++k)
+              {
+            	phi_val_u[k] = fe_values[velocities].value(k, q);
+            	//TODO: Dont know why the first 4 dofs are coming for pressure component
+            	//Cant find any such logic in component_wise_reordering
+            	if (k >= n_p)
+            	{
+            		for (int c=0; c<n_components; c++)
+            			rt_test_phi_val_u_matrix[c](k-n_p,q) = phi_val_u[k][c];
+            	}
+              }
+
+
+    		for (int c=0; c<n_components; c++)
+    		{
+    			std::cout<<"Component no = "<<c<<"  ========================"<<std::endl;
+    			std::cout<<"N matrix from FEValues is"<<std::endl;
+    			for (unsigned int i=0; i<n_u; i++)
+    			{
+    				for (unsigned int q=0; q<n_q_points; q++)
+    				{
+    					std::cout <<std::setw(15)<<rt_test_phi_val_u_matrix[c](i,q);
+    				}
+    				std::cout<<std::endl;
+    			}
+    			std::cout<<std::endl<<std::endl;
+    		}
+
+
+	        return;
+	        ///////////////////
+#endif
 	        for (unsigned int q=0; q<n_q_points; ++q)
 	          {
 	        	Point<dim> p = quadrature_formula.get_points()[q];
@@ -358,13 +406,13 @@ void test ()
 
 	  typedef  BlockVector<double> VectorType;
 	  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-	  mf.vmult(dst_vec, src_vec);
+	  mf.vmult(dst_vec, system_rhs);
 
 #if 0
 	  std::cout<<"Input src_vector to MF is "<<std::endl;
 	  for (int i=0; i<n_u; i++)
 	  {
-		  std::cout<<std::setw(10)<<src_vec.block(0)[i];
+		  std::cout<<std::setw(10)<<system_rhs.block(0)[i];
 	  }
 
 	  std::cout<<std::endl;
