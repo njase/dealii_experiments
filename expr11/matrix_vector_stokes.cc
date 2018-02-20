@@ -1,6 +1,24 @@
-//This is the final version which should work. Right now under debugging
-//This is changed to block Vector. But I noticed that by using single valued blocks and dealii Block vectors result was still the same
-//Just by following #if defs, the single values block case can be obtained.
+// ---------------------------------------------------------------------
+//
+// Copyright (C) 2013 - 2016 by the deal.II authors
+//
+// This file is part of the deal.II library.
+//
+// The deal.II library is free software; you can use it, redistribute
+// it, and/or modify it under the terms of the GNU Lesser General
+// Public License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+// The full text of the license can be found in the file LICENSE at
+// the top level of the deal.II distribution.
+//
+// ---------------------------------------------------------------------
+
+
+
+// this function tests the correctness of the implementation of matrix free
+// matrix-vector products by comparing with the result of deal.II sparse
+// matrix. No hanging nodes and no other
+// constraints for a vector-valued problem (stokes equations).
 
 #include "tests.h"
 
@@ -29,6 +47,7 @@ std::ofstream logfile("output");
 
 #include <iostream>
 #include <complex>
+
 
 template <int dim>
 void test_mesh (Triangulation<2> &tria,
@@ -62,9 +81,6 @@ void test_mesh (Triangulation<2> &tria,
   tria.create_triangulation (points, cells, SubCellData());
 }
 
-//const VectorizedArray<double> *values_mf = nullptr;
-const VectorizedArray<double> *gradients_mf = nullptr;
-
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
 {
@@ -83,29 +99,23 @@ public:
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
     typedef VectorizedArray<Number> vector_t;
-    //FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
-    FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p+1,Number> velocity (data, 0);
-    FEEvaluation<dim,degree_p,degree_p+2,1, Number> pressure (data, 1);
+    FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
+    FEEvaluation<dim,degree_p,degree_p+2,1,  Number> pressure (data, 1);
 
     for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
       {
         velocity.reinit (cell);
-        velocity.read_dof_values (src.block(0));
+        velocity.read_dof_values (src, 0);
         velocity.evaluate (false,true,false);
-        gradients_mf = velocity.begin_gradients(); //real unit cell gradients -- ok
-        //velocity.evaluate (true,false,false);
-        //values_mf = velocity.begin_values(); //read unit cell values -- ok
-
         pressure.reinit (cell);
-        pressure.read_dof_values (src.block(1));
+        pressure.read_dof_values (src, dim);
         pressure.evaluate (true,false,false);
-//#if 0
+
         for (unsigned int q=0; q<velocity.n_q_points; ++q)
           {
             Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
             std::cout<<"gradient for first component are "<<grad_u[0][0][0]<<" and "<<grad_u[0][1][0]<<std::endl;
             std::cout<<"gradient for second component are "<<grad_u[1][0][0]<<" and "<<grad_u[1][1][0]<<std::endl;
-
             vector_t pres = pressure.get_value(q);
             vector_t div = -trace(grad_u);
             pressure.submit_value   (div, q);
@@ -118,22 +128,19 @@ public:
           }
 
         velocity.integrate (false,true);
-        velocity.distribute_local_to_global (dst.block(0));
+        velocity.distribute_local_to_global (dst, 0);
         pressure.integrate (true,false);
-        pressure.distribute_local_to_global (dst.block(1));
-//#endif
+        pressure.distribute_local_to_global (dst, dim);
       }
-
-
   }
 
 
   void vmult (VectorType &dst,
               const VectorType &src) const
   {
-    //AssertDimension (dst.size(), dim+1);
-    //for (unsigned int d=0; d<dim+1; ++d)
-    //  dst[d] = 0;
+    AssertDimension (dst.size(), dim+1);
+    for (unsigned int d=0; d<dim+1; ++d)
+      dst[d] = 0;
     data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply,
                     this, dst, src);
   };
@@ -147,12 +154,10 @@ private:
 template <int dim, int fe_degree>
 void test ()
 {
-  unsigned int   n_q; //For debug
-
   Triangulation<dim>   triangulation;
-  //create_mesh (triangulation);
   test_mesh<dim>(triangulation);
 #if 0
+  create_mesh (triangulation);
   if (fe_degree == 1)
     triangulation.refine_global (4-dim);
   else
@@ -166,10 +171,7 @@ void test ()
   DoFHandler<dim>      dof_handler_p (triangulation);
   DoFHandler<dim>      dof_handler (triangulation);
 
-  FESystem<dim>        fe_u_sys (fe_u, dim);
-  DoFHandler<dim>      dof_handler_u_sys (triangulation);
-
-  MatrixFree<dim,double> mf_data(true);
+  MatrixFree<dim,double> mf_data;
 
   ConstraintMatrix     constraints;
 
@@ -178,41 +180,15 @@ void test ()
 
   BlockVector<double> solution;
   BlockVector<double> system_rhs;
-  BlockVector<double> src_vec;
-  BlockVector<double> dst_vec;
-  //std::vector<Vector<double> > vec1, vec2;
-
+  std::vector<Vector<double> > vec1, vec2;
 
   dof_handler.distribute_dofs (fe);
   dof_handler_u.distribute_dofs (fe_u);
   dof_handler_p.distribute_dofs (fe_p);
   DoFRenumbering::component_wise (dof_handler);
 
-  dof_handler_u_sys.distribute_dofs (fe_u_sys);
-
   constraints.close ();
-  //////////////////////////////
 
-  int n_u = dof_handler_u_sys.n_dofs();
-  int n_p = dof_handler_p.n_dofs();
-
-
-  {
-	  BlockDynamicSparsityPattern dsp(2, 2);
-	  dsp.block(0, 0).reinit (n_u, n_u);
-	  dsp.block(1, 0).reinit (n_p, n_u);
-	  dsp.block(0, 1).reinit (n_u, n_p);
-	  dsp.block(1, 1).reinit (n_p, n_p);
-	  dsp.collect_sizes ();
-	  DoFTools::make_sparsity_pattern (dof_handler, dsp, constraints, false);
-	  sparsity_pattern.copy_from(dsp);
-  }
-
-  system_matrix.reinit (sparsity_pattern);
-
-  //////////////////////////////
-
-#if 0
   std::vector<types::global_dof_index> dofs_per_block (dim+1);
   DoFTools::count_dofs_per_component (dof_handler, dofs_per_block);
 
@@ -236,28 +212,16 @@ void test ()
     DoFTools::make_sparsity_pattern (dof_handler, csp, constraints, false);
     sparsity_pattern.copy_from (csp);
   }
-#endif
 
   system_matrix.reinit (sparsity_pattern);
 
-
-  system_rhs.reinit (2);
-  system_rhs.block(0).reinit (n_u);
-  system_rhs.block(1).reinit (n_p);
-  system_rhs.collect_sizes ();
-
-  solution.reinit (system_rhs);
-
-#if 0
   solution.reinit (dim+1);
   for (unsigned int i=0; i<dim+1; ++i)
     solution.block(i).reinit (dofs_per_block[i]);
   solution.collect_sizes ();
 
   system_rhs.reinit (solution);
-#endif
 
-#if 0
   vec1.resize (dim+1);
   vec2.resize (dim+1);
   vec1[0].reinit (dofs_per_block[0]);
@@ -269,13 +233,6 @@ void test ()
     }
   vec1[dim].reinit (dofs_per_block[dim]);
   vec2[dim].reinit (vec1[dim]);
-#endif
-
-  src_vec.reinit (2);
-  src_vec.block(0).reinit (n_u);
-  src_vec.block(1).reinit (n_p);
-  src_vec.collect_sizes ();
-  dst_vec.reinit(src_vec);
 
   // this is from step-22
   {
@@ -288,7 +245,6 @@ void test ()
 
     const unsigned int   dofs_per_cell   = fe.dofs_per_cell;
     const unsigned int   n_q_points      = quadrature_formula.size();
-    n_q = n_q_points; //debug only
 
     FullMatrix<double>   local_matrix (dofs_per_cell, dofs_per_cell);
 
@@ -340,43 +296,21 @@ void test ()
       }
   }
 
-#if 0
   // first system_rhs with random numbers
-  int b_i = 0;
-  int b_j = 0;
+  float t = 1.0f;
   for (unsigned int i=0; i<dim+1; ++i)
     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
       {
-        const double val = -1. + 2.*random_value<double>();
+        /*const*/ double val = -1. + 2.*random_value<double>();
+        val = t++;
         system_rhs.block(i)(j) = val;
-        //vec1[i](j) = val;
-
-        src_vec.block(b_i)(b_j++) = val;
-        if (b_j >= src_vec.block(0).size())
-        {
-        	b_i++;
-        	b_j = 0;
-        }
-      }
-#endif
-
-  // first system_rhs with random numbers
-    float t = 1.0f;
-  for (unsigned int i=0; i<2; ++i)
-    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-      {
-    	//all zeros
-        const double val = -1. + 2.*random_value<double>();
-        system_rhs.block(i)(j) = t++;  //val;
-        //if (i==0)
-        //	test_system_rhs[j] = system_rhs.block(i)(j);
+        vec1[i](j) = val;
       }
 
   // setup matrix-free structure
   {
     std::vector<const DoFHandler<dim>*> dofs;
-    //dofs.push_back(&dof_handler_u);
-    dofs.push_back(&dof_handler_u_sys);
+    dofs.push_back(&dof_handler_u);
     dofs.push_back(&dof_handler_p);
     ConstraintMatrix dummy_constraints;
     dummy_constraints.close();
@@ -391,123 +325,42 @@ void test ()
 
   system_matrix.vmult (solution, system_rhs);
 
-  //typedef std::vector<Vector<double> > VectorType;
-  typedef  BlockVector<double> VectorType;
+  typedef std::vector<Vector<double> > VectorType;
   MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-  //mf.vmult (vec2, vec1);
-  //mf.vmult(dst_vec, src_vec);
-  mf.vmult(dst_vec, system_rhs);
+  mf.vmult (vec2, vec1);
 
-#if 0
-  /////Only for debugging
-	  std::cout<<"Input to  dealii is "<<std::endl;
-	  for (unsigned int i=0; i<2; ++i)
-	  {
-		  std::cout<<"Block = "<<i<<std::endl;
-	    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-	      {
-	    	std::cout<<std::setw(10)<<system_rhs.block(i)(j);
-	      }
-	    std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
-
-  std::cout<<"Results from MF gradient eval are"<<std::endl;
-  for (int c=0; c<dim; c++)
-  {
-	  std::cout<<"=====Component = "<<c<<std::endl;
-	  for (int d=0; d<dim; d++)
-	  {
-		  std::cout<<"==dim = "<<d<<"    ";
-		  for (int q=0; q<n_q; q++)
-		  {
-			  std::cout<<std::setw(10)<<gradients_mf[c*(dim*n_q)+d*n_q+q][0];
-		  }
-		  std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
-  }
-  std::cout<<std::endl;
-#endif
-
-#if 0
-  	std::cout<<"Unit cell results from MF"<<std::endl;
-	for (int c=0; c<dim;c++)
-	{
-		std::cout<<"component = "<<c<<std::endl;
-		for (int q=0; q<n_q; q++)
-		{
-	  		std::cout<<std::setw(15)<<values_mf[c*n_q+q][0]<<std::endl;
-		}
-	}
-#endif
-	/////
-
-  std::cout<<"Solution vector using dealii is "<<std::endl;
-  for (unsigned int i=0; i<2; ++i)
-  {
-	  std::cout<<"Block = "<<i<<std::endl;
-    for (unsigned int j=0; j<solution.block(i).size(); ++j)
-      {
-    	std::cout<<std::setw(10)<<solution.block(i)(j);
-      }
-    std::cout<<std::endl;
-  }
-  std::cout<<std::endl;
-
-	  std::cout<<"Solution vector using MF is "<<std::endl;
-	  for (unsigned int i=0; i<2; ++i)
-	  {
-		  std::cout<<"Block = "<<i<<std::endl;
-	    for (unsigned int j=0; j<dst_vec.block(i).size(); ++j)
-	      {
-	    	std::cout<<std::setw(10)<<dst_vec.block(i)(j);
-	      }
-	    std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
-
-#if 0
   std::cout<<"Solution vector using dealii is "<<std::endl;
   for (unsigned int i=0; i<dim+1; ++i)
-      for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-    	  std::cout<<std::setw(10)<<solution.block(i)(j);
+     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
+    	 std::cout<<std::setw(10)<<solution.block(i)(j);
 
-  std::cout<<"Solution vector using MF is "<<std::endl;
-  for (unsigned int i=0; i<2; ++i)
-  {
-    for (unsigned int j=0; j<dst_vec.block(i).size(); ++j)
-      {
-    	std::cout<<std::setw(10)<<dst_vec.block(i)(j);
-      }
-    std::cout<<std::endl;
-  }
-#endif
+  std::cout<<std::endl<<"Solution vector using MF is "<<std::endl;
+  for (unsigned int i=0; i<dim+1; ++i)
+       for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
+      	 std::cout<<std::setw(10)<<vec2[i](j);
+  std::cout<<std::endl;
 
-#if 0
   // Verification
   double error = 0.;
   for (unsigned int i=0; i<dim+1; ++i)
     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
       error += std::fabs (solution.block(i)(j)-vec2[i](j));
   double relative = solution.block(0).l1_norm();
-  std::cout<<"Error = "<<error<<" solution L1 norm = "<<relative<<std::endl;
   deallog << "  Verification fe degree " << fe_degree  <<  ": "
           << error/relative << std::endl << std::endl;
-#endif
 }
 
 
 
 int main ()
 {
-  deallog.attach(logfile);
+  //deallog.attach(logfile);
 
-  deallog << std::setprecision (3);
+  //deallog << std::setprecision (3);
 
   {
-    deallog << std::endl << "Test with doubles" << std::endl << std::endl;
-    deallog.push("2d");
+    //deallog << std::endl << "Test with doubles" << std::endl << std::endl;
+    //deallog.push("2d");
     test<2,1>();
     //test<2,2>();
     //test<2,3>();
@@ -516,6 +369,6 @@ int main ()
     //deallog.push("3d");
     //test<3,1>();
     //test<3,2>();
-    deallog.pop();
+    //deallog.pop();
   }
 }
