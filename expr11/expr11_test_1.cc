@@ -1,6 +1,10 @@
-//This is the final version which should work. Right now under debugging
+//This is the final version which works.
 //This is changed to block Vector. But I noticed that by using single valued blocks and dealii Block vectors result was still the same
 //Just by following #if defs, the single values block case can be obtained.
+// This test case has some interesting things:
+//  It uses Vector valued FE_Q and Blockvectors. A bug in existing dealii functionality was found
+//  It shows that FE_Q using new enhancements to MF framework work well
+//  This uses Blockvector. A similar test will be written using std::vectors
 
 #include "tests.h"
 
@@ -62,8 +66,7 @@ void test_mesh (Triangulation<2> &tria,
   tria.create_triangulation (points, cells, SubCellData());
 }
 
-//const VectorizedArray<double> *values_mf = nullptr;
-const VectorizedArray<double> *gradients_mf = nullptr;
+const VectorizedArray<double> *dofs_mf = nullptr;
 
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
@@ -83,7 +86,6 @@ public:
                const std::pair<unsigned int,unsigned int> &cell_range) const
   {
     typedef VectorizedArray<Number> vector_t;
-    //FEEvaluation<dim,degree_p+1,degree_p+2,dim,Number> velocity (data, 0);
     FEEvaluationGen<FE_Q<dim>,degree_p+2,dim,degree_p+1,Number> velocity (data, 0);
     FEEvaluation<dim,degree_p,degree_p+2,1, Number> pressure (data, 1);
 
@@ -91,20 +93,15 @@ public:
       {
         velocity.reinit (cell);
         velocity.read_dof_values (src.block(0));
+        dofs_mf = velocity.begin_dof_values();
         velocity.evaluate (false,true,false);
-        gradients_mf = velocity.begin_gradients(); //real unit cell gradients -- ok
-        //velocity.evaluate (true,false,false);
-        //values_mf = velocity.begin_values(); //read unit cell values -- ok
-
         pressure.reinit (cell);
         pressure.read_dof_values (src.block(1));
         pressure.evaluate (true,false,false);
-//#if 0
+
         for (unsigned int q=0; q<velocity.n_q_points; ++q)
           {
             Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
-            std::cout<<"gradient for first component are "<<grad_u[0][0][0]<<" and "<<grad_u[0][1][0]<<std::endl;
-            std::cout<<"gradient for second component are "<<grad_u[1][0][0]<<" and "<<grad_u[1][1][0]<<std::endl;
 
             vector_t pres = pressure.get_value(q);
             vector_t div = -trace(grad_u);
@@ -116,15 +113,11 @@ public:
 
             velocity.submit_gradient(grad_u, q);
           }
-
         velocity.integrate (false,true);
         velocity.distribute_local_to_global (dst.block(0));
         pressure.integrate (true,false);
         pressure.distribute_local_to_global (dst.block(1));
-//#endif
       }
-
-
   }
 
 
@@ -147,27 +140,22 @@ private:
 template <int dim, int fe_degree>
 void test ()
 {
-  unsigned int   n_q; //For debug
-
   Triangulation<dim>   triangulation;
-  //create_mesh (triangulation);
   test_mesh<dim>(triangulation);
-#if 0
+//#if 0
   if (fe_degree == 1)
     triangulation.refine_global (4-dim);
   else
     triangulation.refine_global (3-dim);
-#endif
+//#endif
 
-  FE_Q<dim>            fe_u (fe_degree+1);
+  FESystem<dim>        fe_u (FE_Q<dim>(fe_degree+1), dim);
   FE_Q<dim>            fe_p (fe_degree);
-  FESystem<dim>        fe (fe_u, dim, fe_p, 1);
+  FESystem<dim>        fe (fe_u, 1, fe_p, 1);
   DoFHandler<dim>      dof_handler_u (triangulation);
   DoFHandler<dim>      dof_handler_p (triangulation);
   DoFHandler<dim>      dof_handler (triangulation);
 
-  FESystem<dim>        fe_u_sys (fe_u, dim);
-  DoFHandler<dim>      dof_handler_u_sys (triangulation);
 
   MatrixFree<dim,double> mf_data(true);
 
@@ -188,12 +176,10 @@ void test ()
   dof_handler_p.distribute_dofs (fe_p);
   DoFRenumbering::component_wise (dof_handler);
 
-  dof_handler_u_sys.distribute_dofs (fe_u_sys);
-
-  constraints.close ();
+    constraints.close ();
   //////////////////////////////
 
-  int n_u = dof_handler_u_sys.n_dofs();
+  int n_u = dof_handler_u.n_dofs();
   int n_p = dof_handler_p.n_dofs();
 
 
@@ -288,7 +274,6 @@ void test ()
 
     const unsigned int   dofs_per_cell   = fe.dofs_per_cell;
     const unsigned int   n_q_points      = quadrature_formula.size();
-    n_q = n_q_points; //debug only
 
     FullMatrix<double>   local_matrix (dofs_per_cell, dofs_per_cell);
 
@@ -367,16 +352,15 @@ void test ()
       {
     	//all zeros
         const double val = -1. + 2.*random_value<double>();
-        system_rhs.block(i)(j) = t++;  //val;
-        //if (i==0)
-        //	test_system_rhs[j] = system_rhs.block(i)(j);
+        system_rhs.block(i)(j) = val; //t++;  //val;
       }
+
+  system_matrix.vmult (solution, system_rhs);
 
   // setup matrix-free structure
   {
     std::vector<const DoFHandler<dim>*> dofs;
-    //dofs.push_back(&dof_handler_u);
-    dofs.push_back(&dof_handler_u_sys);
+    dofs.push_back(&dof_handler_u);
     dofs.push_back(&dof_handler_p);
     ConstraintMatrix dummy_constraints;
     dummy_constraints.close();
@@ -389,112 +373,57 @@ void test ()
                     (MatrixFree<dim>::AdditionalData::none));
   }
 
-  system_matrix.vmult (solution, system_rhs);
-
   //typedef std::vector<Vector<double> > VectorType;
   typedef  BlockVector<double> VectorType;
   MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
   //mf.vmult (vec2, vec1);
-  //mf.vmult(dst_vec, src_vec);
-  mf.vmult(dst_vec, system_rhs);
-
-#if 0
-  /////Only for debugging
-	  std::cout<<"Input to  dealii is "<<std::endl;
-	  for (unsigned int i=0; i<2; ++i)
-	  {
-		  std::cout<<"Block = "<<i<<std::endl;
-	    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-	      {
-	    	std::cout<<std::setw(10)<<system_rhs.block(i)(j);
-	      }
-	    std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
-
-  std::cout<<"Results from MF gradient eval are"<<std::endl;
-  for (int c=0; c<dim; c++)
+  //Reorder system_rhs.block(0) and store into src_vec as MF expects
+  for (int i=0; i<n_u/dim;i++)
   {
-	  std::cout<<"=====Component = "<<c<<std::endl;
-	  for (int d=0; d<dim; d++)
-	  {
-		  std::cout<<"==dim = "<<d<<"    ";
-		  for (int q=0; q<n_q; q++)
-		  {
-			  std::cout<<std::setw(10)<<gradients_mf[c*(dim*n_q)+d*n_q+q][0];
-		  }
-		  std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
+	  src_vec.block(0)(i*dim) = system_rhs.block(0)(i);
+	  src_vec.block(0)(i*dim+1) = system_rhs.block(0)(n_u/dim+i);
   }
-  std::cout<<std::endl;
-#endif
+  src_vec.block(1) = system_rhs.block(1);
 
-#if 0
-  	std::cout<<"Unit cell results from MF"<<std::endl;
-	for (int c=0; c<dim;c++)
-	{
-		std::cout<<"component = "<<c<<std::endl;
-		for (int q=0; q<n_q; q++)
-		{
-	  		std::cout<<std::setw(15)<<values_mf[c*n_q+q][0]<<std::endl;
-		}
-	}
-#endif
-	/////
+  BlockVector<double> tmp_dst_vec(dst_vec);
+  mf.vmult(tmp_dst_vec, src_vec);
 
-  std::cout<<"Solution vector using dealii is "<<std::endl;
-  for (unsigned int i=0; i<2; ++i)
+  //Reorder back the dst_vec
+  for (int i=0; i<n_u/dim;i++)
   {
-	  std::cout<<"Block = "<<i<<std::endl;
-    for (unsigned int j=0; j<solution.block(i).size(); ++j)
-      {
-    	std::cout<<std::setw(10)<<solution.block(i)(j);
-      }
-    std::cout<<std::endl;
+	  dst_vec.block(0)(i) = tmp_dst_vec.block(0)(i*dim);
+	  dst_vec.block(0)(n_u/dim+i) = tmp_dst_vec.block(0)(i*dim+1);
   }
-  std::cout<<std::endl;
+  dst_vec.block(1) = tmp_dst_vec.block(1);
 
-	  std::cout<<"Solution vector using MF is "<<std::endl;
-	  for (unsigned int i=0; i<2; ++i)
-	  {
-		  std::cout<<"Block = "<<i<<std::endl;
-	    for (unsigned int j=0; j<dst_vec.block(i).size(); ++j)
-	      {
-	    	std::cout<<std::setw(10)<<dst_vec.block(i)(j);
-	      }
-	    std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
 
-#if 0
-  std::cout<<"Solution vector using dealii is "<<std::endl;
-  for (unsigned int i=0; i<dim+1; ++i)
-      for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-    	  std::cout<<std::setw(10)<<solution.block(i)(j);
-
-  std::cout<<"Solution vector using MF is "<<std::endl;
-  for (unsigned int i=0; i<2; ++i)
-  {
-    for (unsigned int j=0; j<dst_vec.block(i).size(); ++j)
-      {
-    	std::cout<<std::setw(10)<<dst_vec.block(i)(j);
-      }
-    std::cout<<std::endl;
-  }
-#endif
-
-#if 0
   // Verification
   double error = 0.;
-  for (unsigned int i=0; i<dim+1; ++i)
+  for (unsigned int i=0; i<2; ++i)
     for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-      error += std::fabs (solution.block(i)(j)-vec2[i](j));
+      error += std::fabs (solution.block(i)(j)-dst_vec.block(i)(j));
   double relative = solution.block(0).l1_norm();
   std::cout<<"Error = "<<error<<" solution L1 norm = "<<relative<<std::endl;
   deallog << "  Verification fe degree " << fe_degree  <<  ": "
           << error/relative << std::endl << std::endl;
-#endif
+
+  if (error > 10e-6)
+  {
+	  std::cout<<"Solution vector using dealii is "<<std::endl;
+	  for (unsigned int i=0; i<dim+1; ++i)
+		  for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
+			  std::cout<<std::setw(10)<<solution.block(i)(j);
+
+	  std::cout<<"Solution vector using MF is "<<std::endl;
+	  for (unsigned int i=0; i<2; ++i)
+	  {
+		  for (unsigned int j=0; j<dst_vec.block(i).size(); ++j)
+		  {
+			  std::cout<<std::setw(10)<<dst_vec.block(i)(j);
+		  }
+		  std::cout<<std::endl;
+	  }
+  }
 }
 
 
@@ -508,10 +437,10 @@ int main ()
   {
     deallog << std::endl << "Test with doubles" << std::endl << std::endl;
     deallog.push("2d");
-    test<2,1>();
+    //test<2,1>();
     //test<2,2>();
     //test<2,3>();
-    //test<2,4>();
+    test<2,4>();
     //deallog.pop();
     //deallog.push("3d");
     //test<3,1>();
