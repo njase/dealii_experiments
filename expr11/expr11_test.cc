@@ -4,10 +4,9 @@
 //			 - Using FiniteElement functions and ShapeInfo functions
 // 			 - for RT elements, for all components
 //			 - compare values, gradients and hessians
-// This is an experiment to validate my implementation by using existing implementation of dealii RT elements
-//so that functional bugs are removed
 //The code base is adapted from matrix_vector_stokes.cc and changed to RT
-// Step by step tests: Step 1
+// This works..The other part exp11_test_1.cc is corresponding test for FE_Q
+// These are base test cases for new functionality
 /////////////////
 
 #include "tests.h"
@@ -83,8 +82,6 @@ void test_mesh (Triangulation<2> &tria,
   tria.create_triangulation (points, cells, SubCellData());
 }
 
-VectorizedArray<double> *gradients_mf;
-
 template <int dim, int degree_p, typename VectorType>
 class MatrixFreeTest
 {
@@ -125,9 +122,6 @@ public:
         for (unsigned int q=0; q<velocity.n_q_points; ++q)
           {
             Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
-            //std::cout<<"gradient for first component are "<<grad_u[0][0][0]<<" and "<<grad_u[0][1][0]<<std::endl;
-            //std::cout<<"gradient for second component are "<<grad_u[1][0][0]<<" and "<<grad_u[1][1][0]<<std::endl;
-
             vector_t pres = pressure.get_value(q);
             vector_t div = -trace(grad_u);
             pressure.submit_value   (div, q);
@@ -138,8 +132,6 @@ public:
 
             velocity.submit_gradient(grad_u, q);
           }
-
-        //gradients_mf = velocity.begin_gradients();
 
         velocity.integrate (false,true);
         velocity.distribute_local_to_global (dst.block(0));
@@ -156,8 +148,6 @@ public:
   {
     if (data.is_primitive())
     {
-    	//data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply_vector,
-        //            this, dst, src);
     	std::cout<<"Primitive element not supported in this test"<<std::endl;
     }
     else
@@ -251,25 +241,6 @@ void test ()
 	    const unsigned int   dofs_per_cell   = fe.dofs_per_cell;
 	    const unsigned int   n_q_points      = quadrature_formula.size();
 
-#if 0
-    	std::cout<<"Quad points are"<<std::endl;
-    	for (unsigned int d=0; d<dim; d++)
-    	{
-    		for (unsigned int q=0; q<n_q_points; q++)
-    		{
-    			std::cout <<std::setw(12)<<quadrature_formula.get_points()[q][d];
-    		}
-    		std::cout<<std::endl;
-    	}
-    	std::cout<<std::endl;
-    	std::cout<<std::endl;
-#endif
-
-	    //Matrix of gradient vectors
-	    //std::vector<FullMatrix<double>> rt_test_phi_grad_u_matrix(dim,FullMatrix<double>(n_u,n_q_points));
-
-	    //int test_c = 1; //Test component number
-
 	    Vector<double> test_system_rhs(n_u);
  	    Vector<double> test_grad_evaluation_results(n_q_points);
 
@@ -294,26 +265,13 @@ void test ()
 
 	        for (unsigned int q=0; q<n_q_points; ++q)
 	          {
-	        	//Point<dim> p = quadrature_formula.get_points()[q];
 	        	for (unsigned int k=0; k<dofs_per_cell; ++k)
 	              {
 	                phi_grad_u[k] = fe_values[velocities].gradient(k, q);
 	                div_phi_u[k]  = fe_values[velocities].divergence (k, q);
 	                phi_p[k]      = fe_values[pressure].value (k, q);
-#if 0
-	                //TODO: Dont know why the first 4 dofs are coming for pressure component
-	                //Cant find any such logic in component_wise_reordering
-	                if (k >= n_p)
-	                {
-	                	for (int d=0; d<dim; d++)
-	                	{
-	                		rt_test_phi_grad_u_matrix[d](k-n_p,q) = phi_grad_u[k][test_c][d];
-	                	}
-	                }
-#endif
 	              }
 
-//#if 0
 	            for (unsigned int i=0; i<dofs_per_cell; ++i)
 	              {
 	                for (unsigned int j=0; j<=i; ++j)
@@ -325,9 +283,8 @@ void test ()
 
 	                  }
 	              }
-//#endif
 	          }
-//#if 0
+
 	        for (unsigned int i=0; i<dofs_per_cell; ++i)
 	          for (unsigned int j=i+1; j<dofs_per_cell; ++j)
 	            local_matrix(i,j) = local_matrix(j,i);
@@ -336,26 +293,9 @@ void test ()
 	        constraints.distribute_local_to_global (local_matrix,
 	                                                local_dof_indices,
 	                                                system_matrix);
-//#endif
+
 	      }
 
-#if 0
-	    std::cout<<"test component = "<<test_c<<std::endl;
-		for (int d=0; d<dim; d++)
-		{
-			std::cout<<"direction = "<<d<<"  ========================"<<std::endl;
-			std::cout<<"D matrix from FEValues is"<<std::endl;
-			for (unsigned int i=0; i<n_u; i++)
-			{
-				for (unsigned int q=0; q<n_q_points; q++)
-				{
-					std::cout <<std::setw(15)<<rt_test_phi_grad_u_matrix[d](i,q);
-				}
-				std::cout<<std::endl;
-			}
-			std::cout<<std::endl<<std::endl;
-		}
-#endif
 
 	  // first system_rhs with random numbers
 	    float t = 1.0f;
@@ -365,54 +305,11 @@ void test ()
 	    	//all zeros
 	        const double val = -1. + 2.*random_value<double>();
 	        system_rhs.block(i)(j) = val; //t++; //val;
-	        //if (i==0)
-	        //	test_system_rhs[j] = system_rhs.block(i)(j);
 	      }
-
-#if 0
-	  std::cout<<"Input to  dealii is "<<std::endl;
-	  for (unsigned int i=0; i<2; ++i)
-	  {
-		  std::cout<<"Block = "<<i<<std::endl;
-	    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-	      {
-	    	std::cout<<std::setw(10)<<system_rhs.block(i)(j);
-	      }
-	    std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
-#endif
 
 
 	  system_matrix.vmult (solution, system_rhs);
-#if 0
-	  std::cout<<"Solution vector using dealii is "<<std::endl;
-	  for (unsigned int i=0; i<2; ++i)
-	  {
-		  std::cout<<"Block = "<<i<<std::endl;
-	    for (unsigned int j=0; j<solution.block(i).size(); ++j)
-	      {
-	    	std::cout<<std::setw(10)<<solution.block(i)(j);
-	      }
-	    std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
-#endif
 
-
-#if 0
-	  std::cout<<"Results from dealii RT gradient eval for component = "<<test_c<<" are"<<std::endl;
-	  for (int d=0; d<dim; d++)
-	  {
-		  rt_test_phi_grad_u_matrix[d].Tvmult(test_grad_evaluation_results,test_system_rhs);
-		  std::cout<<"==dim = "<<d<<"    ";
-		  for (int q=0; q<n_q_points; q++)
-		  {
-			  std::cout<<std::setw(10)<<test_grad_evaluation_results[q];
-		  }
-		  std::cout<<std::endl;
-	  }
-#endif
 
 	  // setup matrix-free structure
 	  {
@@ -434,48 +331,6 @@ void test ()
 	  typedef  BlockVector<double> VectorType;
 	  MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
 	  mf.vmult(dst_vec, system_rhs);
-#if 0
-	  std::cout<<"Solution vector using MF is "<<std::endl;
-	  for (unsigned int i=0; i<2; ++i)
-	  {
-		  std::cout<<"Block = "<<i<<std::endl;
-	    for (unsigned int j=0; j<dst_vec.block(i).size(); ++j)
-	      {
-	    	std::cout<<std::setw(10)<<dst_vec.block(i)(j);
-	      }
-	    std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
-#endif
-#if 0
-	  std::cout<<"Input src_vector to MF is "<<std::endl;
-	  for (int i=0; i<n_u; i++)
-	  {
-		  std::cout<<std::setw(10)<<test_system_rhs[i];
-	  }
-
-	  std::cout<<std::endl;
-#endif
-
-#if 0
-	  std::cout<<"Results from MF gradient eval are"<<std::endl;
-
-	  for (int c=0; c<n_components; c++)
-	  {
-		  std::cout<<"=====Component = "<<c<<std::endl;
-		  for (int d=0; d<dim; d++)
-		  {
-			  std::cout<<"==dim = "<<d<<"    ";
-			  for (int q=0; q<n_q_points; q++)
-			  {
-				  std::cout<<std::setw(10)<<gradients_mf[c*(dim*n_q_points)+d*n_q_points+q][0];
-			  }
-			  std::cout<<std::endl;
-		  }
-		  std::cout<<std::endl;
-	  }
-	  std::cout<<std::endl;
-#endif
 
 	  // Verification
 	  double error = 0.;
