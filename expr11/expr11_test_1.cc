@@ -4,7 +4,7 @@
 // This test case has some interesting things:
 //  It uses Vector valued FE_Q and Blockvectors. A bug in existing dealii functionality was found
 //  It shows that FE_Q using new enhancements to MF framework work well
-//  This uses Blockvector. A similar test will be written using std::vectors
+//  This uses Blockvector. No new test will be written using std::vectors
 
 #include "tests.h"
 
@@ -124,9 +124,6 @@ public:
   void vmult (VectorType &dst,
               const VectorType &src) const
   {
-    //AssertDimension (dst.size(), dim+1);
-    //for (unsigned int d=0; d<dim+1; ++d)
-    //  dst[d] = 0;
     data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply,
                     this, dst, src);
   };
@@ -157,7 +154,7 @@ void test ()
   DoFHandler<dim>      dof_handler (triangulation);
 
 
-  MatrixFree<dim,double> mf_data(true);
+  MatrixFree<dim,double> mf_data;
 
   ConstraintMatrix     constraints;
 
@@ -196,36 +193,6 @@ void test ()
 
   system_matrix.reinit (sparsity_pattern);
 
-  //////////////////////////////
-
-#if 0
-  std::vector<types::global_dof_index> dofs_per_block (dim+1);
-  DoFTools::count_dofs_per_component (dof_handler, dofs_per_block);
-
-  //std::cout << "   Number of active cells: "
-  //          << triangulation.n_active_cells()
-  //          << std::endl
-  //          << "   Number of degrees of freedom: "
-  //          << dof_handler.n_dofs()
-  //          << " (" << n_u << '+' << n_p << ')'
-  //          << std::endl;
-
-  {
-    BlockDynamicSparsityPattern csp (dim+1,dim+1);
-
-    for (unsigned int d=0; d<dim+1; ++d)
-      for (unsigned int e=0; e<dim+1; ++e)
-        csp.block(d,e).reinit (dofs_per_block[d], dofs_per_block[e]);
-
-    csp.collect_sizes();
-
-    DoFTools::make_sparsity_pattern (dof_handler, csp, constraints, false);
-    sparsity_pattern.copy_from (csp);
-  }
-#endif
-
-  system_matrix.reinit (sparsity_pattern);
-
 
   system_rhs.reinit (2);
   system_rhs.block(0).reinit (n_u);
@@ -233,29 +200,6 @@ void test ()
   system_rhs.collect_sizes ();
 
   solution.reinit (system_rhs);
-
-#if 0
-  solution.reinit (dim+1);
-  for (unsigned int i=0; i<dim+1; ++i)
-    solution.block(i).reinit (dofs_per_block[i]);
-  solution.collect_sizes ();
-
-  system_rhs.reinit (solution);
-#endif
-
-#if 0
-  vec1.resize (dim+1);
-  vec2.resize (dim+1);
-  vec1[0].reinit (dofs_per_block[0]);
-  vec2[0].reinit (vec1[0]);
-  for (unsigned int i=1; i<dim; ++i)
-    {
-      vec1[i].reinit (vec1[0]);
-      vec2[i].reinit (vec1[0]);
-    }
-  vec1[dim].reinit (dofs_per_block[dim]);
-  vec2[dim].reinit (vec1[dim]);
-#endif
 
   src_vec.reinit (2);
   src_vec.block(0).reinit (n_u);
@@ -325,26 +269,6 @@ void test ()
       }
   }
 
-#if 0
-  // first system_rhs with random numbers
-  int b_i = 0;
-  int b_j = 0;
-  for (unsigned int i=0; i<dim+1; ++i)
-    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
-      {
-        const double val = -1. + 2.*random_value<double>();
-        system_rhs.block(i)(j) = val;
-        //vec1[i](j) = val;
-
-        src_vec.block(b_i)(b_j++) = val;
-        if (b_j >= src_vec.block(0).size())
-        {
-        	b_i++;
-        	b_j = 0;
-        }
-      }
-#endif
-
   // first system_rhs with random numbers
     float t = 1.0f;
   for (unsigned int i=0; i<2; ++i)
@@ -376,7 +300,7 @@ void test ()
   //typedef std::vector<Vector<double> > VectorType;
   typedef  BlockVector<double> VectorType;
   MatrixFreeTest<dim,fe_degree,VectorType> mf (mf_data);
-  //mf.vmult (vec2, vec1);
+
   //Reorder system_rhs.block(0) and store into src_vec as MF expects
   for (int i=0; i<n_u/dim;i++)
   {
@@ -410,9 +334,11 @@ void test ()
   if (error > 10e-6)
   {
 	  std::cout<<"Solution vector using dealii is "<<std::endl;
-	  for (unsigned int i=0; i<dim+1; ++i)
+	  for (unsigned int i=0; i<2; ++i)
 		  for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
 			  std::cout<<std::setw(10)<<solution.block(i)(j);
+
+	  std::cout<<std::endl;
 
 	  std::cout<<"Solution vector using MF is "<<std::endl;
 	  for (unsigned int i=0; i<2; ++i)
@@ -437,12 +363,13 @@ int main ()
   {
     deallog << std::endl << "Test with doubles" << std::endl << std::endl;
     deallog.push("2d");
-    //test<2,1>();
-    //test<2,2>();
-    //test<2,3>();
+    test<2,1>();
+    test<2,2>();
+    test<2,3>();
     test<2,4>();
     //deallog.pop();
     //deallog.push("3d");
+    //Does not work for 3-D, known issues (kernel impl pending)
     //test<3,1>();
     //test<3,2>();
     deallog.pop();

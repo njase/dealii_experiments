@@ -92,7 +92,6 @@ public:
   MatrixFreeTest(const MatrixFree<dim,Number> &data_in, bool check_with_scalar=false):
 	  	  	  data (data_in), n_q_points_1d(degree_p+2)
   {
-	  deallog<<"Is MatrixFree using primitive element? = "<<data.is_primitive()<<std::endl;
 	  deallog<<"n_array_elements on this machine = "<<n_array_elements<<std::endl;
 	  deallog<<"n_q_points_1d = "<<n_q_points_1d<<std::endl;
 	  deallog<<"No of (physical cells, macro cells) = ("<<data.n_physical_cells()<<", "<<data.n_macro_cells()<<")"<<std::endl;
@@ -139,22 +138,15 @@ public:
         pressure.distribute_local_to_global (dst.block(1));
       }
 
-    std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
+    //std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
 
 }
 
   void vmult (VectorType &dst,
               const VectorType &src) const
   {
-    if (data.is_primitive())
-    {
-    	std::cout<<"Primitive element not supported in this test"<<std::endl;
-    }
-    else
-    {
-    		data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply_vector,
-                    this, dst, src);
-    }
+	  data.cell_loop (&MatrixFreeTest<dim,degree_p,VectorType>::local_apply_vector,
+                  this, dst, src);
 
   };
 
@@ -185,7 +177,7 @@ void test ()
 	  DoFHandler<dim>      dof_handler_p (triangulation);
 	  DoFHandler<dim>      dof_handler (triangulation);
 
-	  MatrixFree<dim,double> mf_data(true);
+	  MatrixFree<dim,double> mf_data;
 
 	  ConstraintMatrix     constraints;
 
@@ -302,7 +294,6 @@ void test ()
 	  for (unsigned int i=0; i<2; ++i)
 	    for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
 	      {
-	    	//all zeros
 	        const double val = -1. + 2.*random_value<double>();
 	        system_rhs.block(i)(j) = val; //t++; //val;
 	      }
@@ -359,8 +350,9 @@ int main ()
   {
     //deallog << std::endl << "Test with doubles" << std::endl << std::endl;
     //deallog.push("2d");
-    //test<2,1>();
+    test<2,1>();
     test<2,2>();
+    //Does not work beyond..known issues (ker impl and RT lexicographic mapping)
     //test<2,3>();
     //test<2,4>();
     //deallog.pop();
