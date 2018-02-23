@@ -99,17 +99,52 @@ namespace Step20
           velocity.distribute_local_to_global (dst.block(0));
           pressure.integrate (true,false);
           pressure.distribute_local_to_global (dst.block(1));
-
         }
 
       std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
 
   }
 
+    void
+     local_rhs (const MatrixFree<dim,Number> &data,
+                  VectorType          &dst,
+                  const VectorType    &src,
+                  const std::pair<unsigned int,unsigned int> &cell_range) const
+     {
+       typedef VectorizedArray<Number> vector_t;
+       FEEvaluation<dim,degree_p,n_q_points_1d,1,Number> pressure (data, 1); //For scalar elements, use orig FEEvaluation
+
+       const RightHandSide<dim>          right_hand_side;
+       std::vector<double> rhs_values (pressure.n_q_points);
+
+       for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
+         {
+
+    	   //Find quadrature points on real cell for cartesian cells
+    	   auto real_q_points = pressure.mapping_info->quadrature_points;
+
+           right_hand_side.value_list (fe_values.get_quadrature_points(), ???
+                                       rhs_values);
+
+           //TBD
+         }
+
+       std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
+
+   }
+
     void vmult (VectorType &dst,
                 const VectorType &src) const
     {
   	  data.cell_loop (&MF_MixedLaplaceProblem<dim,degree_p,VectorType>::local_apply_vector,
+                    this, dst, src);
+
+    };
+
+    void rhsvmult (VectorType &dst,
+                const VectorType &src) const
+    {
+  	  data.cell_loop (&MF_MixedLaplaceProblem<dim,degree_p,VectorType>::local_rhs,
                     this, dst, src);
 
     };
@@ -211,9 +246,12 @@ namespace Step20
   double PressureBoundaryValues<dim>::value (const Point<dim>  &p,
                                              const unsigned int /*component*/) const
   {
+	return 0; //zero boundary
+#if 0
     const double alpha = 0.3;
     const double beta = 1;
     return -(alpha*p[0]*p[1]*p[1]/2 + beta*p[0] - alpha*p[0]*p[0]*p[0]/6);
+#endif
   }
 
 
@@ -416,11 +454,6 @@ namespace Step20
                   const double        div_phi_j_u = fe_values[velocities].divergence (j, q);
                   const double        phi_j_p     = fe_values[pressure].value (j, q);
 
-#if 0
-                  local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
-                		  	  	  	  - phi_i_p * div_phi_j_u)
-                                       * fe_values.JxW(q);
-#endif
 
                   local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
                                         - div_phi_i_u * phi_j_p
