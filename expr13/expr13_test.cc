@@ -58,6 +58,7 @@ namespace Step20
     	//n_q_points_1d(degree_p+2)
     {};
 
+    //FIXME We are ignoring inverse permeability matrix for time being ==> taking as unit matrix
     void
     local_apply_vector (const MatrixFree<dim,Number> &data,
                  VectorType          &dst,
@@ -78,11 +79,12 @@ namespace Step20
           pressure.reinit (cell);
           pressure.read_dof_values (src.block(1));
           pressure.evaluate (true,false,false);
+
           for (unsigned int q=0; q<velocity.n_q_points; ++q)
           {
         	  Tensor<1,dim,vector_t> u = velocity.get_value(q);
-
         	  Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
+
         	  vector_t pres = pressure.get_value(q);
         	  vector_t div = -trace(grad_u);
         	  pressure.submit_value (div, q);
@@ -98,33 +100,6 @@ namespace Step20
           pressure.integrate (true,false);
           pressure.distribute_local_to_global (dst.block(1));
 
-#if 0
-          velocity.reinit (cell);
-          velocity.read_dof_values (src.block(0));
-          velocity.evaluate (false,true,false);
-          pressure.reinit (cell);
-          pressure.read_dof_values (src.block(1));
-          pressure.evaluate (true,false,false);
-
-          for (unsigned int q=0; q<velocity.n_q_points; ++q)
-            {
-              Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
-              vector_t pres = pressure.get_value(q);
-              vector_t div = -trace(grad_u);
-              pressure.submit_value   (div, q);
-
-              // subtract p * I
-              for (unsigned int d=0; d<dim; ++d)
-                grad_u[d][d] -= pres;
-
-              velocity.submit_gradient(grad_u, q);
-            }
-
-          velocity.integrate (false,true);
-          velocity.distribute_local_to_global (dst.block(0));
-          pressure.integrate (true,false);
-          pressure.distribute_local_to_global (dst.block(1));
-#endif
         }
 
       std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
@@ -311,9 +286,9 @@ namespace Step20
     //We can only work cartesian mesh cells in MF version - so let it be as-it-is
 	GridGenerator::hyper_cube (triangulation, -1, 1);
 	//First, lets test on one cell only
-#if 0
+//#if 0
     triangulation.refine_global (3);
-#endif
+//#endif
 
     dof_handler.distribute_dofs (fe);
 
@@ -440,6 +415,12 @@ namespace Step20
                   const Tensor<1,dim> phi_j_u     = fe_values[velocities].value (j, q);
                   const double        div_phi_j_u = fe_values[velocities].divergence (j, q);
                   const double        phi_j_p     = fe_values[pressure].value (j, q);
+
+#if 0
+                  local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
+                		  	  	  	  - phi_i_p * div_phi_j_u)
+                                       * fe_values.JxW(q);
+#endif
 
                   local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
                                         - div_phi_i_u * phi_j_p
@@ -720,6 +701,36 @@ namespace Step20
       mf.vmult(mf_solution, system_rhs);
 
 
+      //if (error > 10e-6)
+      //{
+    	  std::cout<<"Solution vector using dealii is "<<std::endl;
+    	  for (unsigned int i=0; i<2; ++i)
+    	  {
+    		  for (unsigned int j=0; j<solution.block(i).size(); ++j)
+    		  {
+    			  if (fabs(solution.block(i)(j)) < 10e-6)
+    				  std::cout<<std::setw(10)<<0;
+    			  else
+    				  std::cout<<std::setw(10)<<solution.block(i)(j);
+    		  }
+    		  std::cout<<std::endl;
+    	  }
+
+    	  std::cout<<"Solution vector using MF is "<<std::endl;
+    	  for (unsigned int i=0; i<2; ++i)
+    	  {
+    		  for (unsigned int j=0; j<mf_solution.block(i).size(); ++j)
+    		  {
+    			  if (fabs(mf_solution.block(i)(j)) < 10e-6)
+    				  std::cout<<std::setw(10)<<0;
+    			  else
+    				  std::cout<<std::setw(10)<<mf_solution.block(i)(j);
+    		  }
+    		  std::cout<<std::endl;
+    	  }
+      //}
+
+
       // Verification
       double error = 0.;
       for (unsigned int i=0; i<2; ++i)
@@ -750,7 +761,7 @@ namespace Step20
     assemble_system ();
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 
-    std::cout<<std::endl<<"Testing the Matrix assembly and Matrix Free assembly";
+    std::cout<<std::endl<<"Testing the Matrix assembly and Matrix Free assembly"<< std::endl;
     test_assembly ();
 
 
