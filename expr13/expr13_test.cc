@@ -208,6 +208,10 @@ namespace Step20
     void test_assembly ();
 
     void test_rhs_assembly();
+
+    SolverControl::State write_intermediate_solution (const unsigned int    iteration,
+                                        const double check_value,
+                                        const Vector<double> &current_iterate) const;
   };
 
 
@@ -637,6 +641,26 @@ namespace Step20
 
 
   template <int dim>
+  SolverControl::State
+  MixedLaplaceProblem<dim>::write_intermediate_solution (const unsigned int    iteration,
+                                      const double check_value,
+                                      const Vector<double> &current_iterate) const
+    {
+	  std::cout<<std::endl<<iteration<<"  "<<check_value;
+#if 0
+      DataOut<2> data_out;
+      data_out.attach_dof_handler (dof_handler);
+      data_out.add_data_vector (current_iterate, "solution");
+      data_out.build_patches ();
+      std::ofstream output ((std::string("solution-")
+                             + Utilities::int_to_string(iteration,4) + ".vtu").c_str());
+      data_out.write_vtu (output);
+#endif
+      return SolverControl::success;
+    }
+
+
+  template <int dim>
   void MixedLaplaceProblem<dim>::solve ()
   {
     InverseMatrix<SparseMatrix<double> > inverse_mass (system_matrix.block(0,0));
@@ -656,6 +680,16 @@ namespace Step20
       SolverControl solver_control (solution.block(1).size(),
                                     1e-12*schur_rhs.l2_norm());
       SolverCG<> cg (solver_control);
+
+
+      //////////Experiment
+
+      using std::placeholders::_1;
+      using std::placeholders::_2;
+      using std::placeholders::_3;
+      cg.connect (std::bind (&MixedLaplaceProblem::write_intermediate_solution,
+                                       this,_1,_2,_3));
+	  //////////Experiment
 
       ApproximateSchurComplement approximate_schur (system_matrix);
       InverseMatrix<ApproximateSchurComplement> approximate_inverse
@@ -897,7 +931,7 @@ namespace Step20
     //test_rhs_assembly ();
 
 
-#if 0 //To be opened later
+//#if 0 //To be opened later
     std::cout<<std::endl<<"Solving the Linear system, ";
     time.restart();
     solve ();
@@ -912,7 +946,7 @@ namespace Step20
     time.restart();
     output_results ();
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
-#endif
+//#endif
   }
 }
 
