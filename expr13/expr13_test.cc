@@ -10,6 +10,7 @@
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/block_sparse_matrix.h>
 #include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/solver_minres.h>
 #include <deal.II/lac/precondition.h>
 
 #include <deal.II/grid/tria.h>
@@ -45,6 +46,7 @@ namespace Step20
   using namespace dealii;
 
   template<int> class RightHandSide;
+  template <int dim> class PressureBoundaryValues;
 
   template <int dim, int degree_p, typename VectorType>
   class MF_MixedLaplaceProblem
@@ -119,10 +121,11 @@ namespace Step20
 
        const RightHandSide<dim>   right_hand_side;
        vector_t val;
+       PressureBoundaryValues<dim> pressure_boundary_values;
 
        for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
          {
-    	   pressure.reinit(cell);
+       	   pressure.reinit(cell);
 
     	   for (unsigned int q=0; q<pressure.n_q_points; ++q)
     	   {
@@ -131,11 +134,12 @@ namespace Step20
     		   pressure.submit_value (-val,q);
     	   }
 
-           pressure.integrate (true,false);
+    	   pressure.integrate (true,false);
            pressure.distribute_local_to_global (dst.block(1));
          }
 
-       dst.block(0) = 0; //Zero boundary
+
+       dst.block(0) = pressure_boundary_values.constant_boundary_value();
 
        std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
 
@@ -174,6 +178,7 @@ namespace Step20
     void make_grid_and_dofs ();
     void assemble_system ();
     void solve ();
+    void solve_minres ();
     void compute_errors () const;
     void output_results () const;
 
@@ -189,6 +194,10 @@ namespace Step20
 
     BlockSparsityPattern      sparsity_pattern;
     BlockSparseMatrix<double> system_matrix;
+
+    //Experimentation
+    SparsityPattern      mono_sparsity_pattern;
+    SparseMatrix<double> mono_system_matrix;
 
     BlockVector<double>       solution;
     BlockVector<double>       system_rhs;
@@ -234,11 +243,16 @@ namespace Step20
   template <int dim>
   class PressureBoundaryValues : public Function<dim>
   {
+	  bool const_bry;
   public:
-    PressureBoundaryValues () : Function<dim>(1) {}
+    PressureBoundaryValues (bool is_const_bry = true) :
+    					Function<dim>(1), const_bry(is_const_bry)
+    					{}
 
     virtual double value (const Point<dim>   &p,
                           const unsigned int  component = 0) const;
+
+    double constant_boundary_value() const;
   };
 
 
@@ -275,12 +289,22 @@ namespace Step20
   double PressureBoundaryValues<dim>::value (const Point<dim>  &p,
                                              const unsigned int /*component*/) const
   {
-	  return 0; //zero boundary
-#if 0
+	  if (const_bry)
+		  return constant_boundary_value();
+
+	//Else, non constant boundary as earlier in dealii
     const double alpha = 0.3;
     const double beta = 1;
     return -(alpha*p[0]*p[1]*p[1]/2 + beta*p[0] - alpha*p[0]*p[0]*p[0]/6);
-#endif
+
+  }
+
+  template <int dim>
+  double PressureBoundaryValues<dim>::constant_boundary_value () const
+  {
+	  Assert(const_bry == true, ExcInvalidState ());
+
+	  return 1; //something const. non-zero boundary. With zero boundary, the iteration does not proceed
   }
 
 
@@ -399,6 +423,14 @@ namespace Step20
     system_rhs.collect_sizes ();
 
 
+    //Experimentation for minres
+    DynamicSparsityPattern mono_dsp(dof_handler.n_dofs());
+    DoFTools::make_sparsity_pattern (dof_handler, mono_dsp);
+    mono_sparsity_pattern.copy_from(mono_dsp);
+
+    mono_system_matrix.reinit (mono_sparsity_pattern);
+
+
     // setup matrix-free structure
     {
         dof_handler_u.distribute_dofs (fe_u);
@@ -442,6 +474,7 @@ namespace Step20
     const unsigned int   dofs_per_cell   = fe.dofs_per_cell;
     const unsigned int   n_q_points      = quadrature_formula.size();
     const unsigned int   n_face_q_points = face_quadrature_formula.size();
+    const unsigned int 	 n_u = fe_u.dofs_per_cell; //For velocity dofs
 
     FullMatrix<double>   local_matrix (dofs_per_cell, dofs_per_cell);
     Vector<double>       local_rhs (dofs_per_cell);
@@ -486,23 +519,20 @@ namespace Step20
                   const double        div_phi_j_u = fe_values[velocities].divergence (j, q);
                   const double        phi_j_p     = fe_values[pressure].value (j, q);
 
-#if 0
-                  local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
-                		  	  	  	  - phi_i_p * div_phi_j_u)
-                                       * fe_values.JxW(q);
-#endif
-
                   local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
                                         - div_phi_i_u * phi_j_p
                                         - phi_i_p * div_phi_j_u)
                                        * fe_values.JxW(q);
                 }
 
+              //Since DOFs are ordered as velocity followed by pressure,
+              //this only works on pressure test functions
               local_rhs(i) += -phi_i_p *
                               rhs_values[q] *
                               fe_values.JxW(q);
             }
 
+#if 0
         for (unsigned int face_n=0;
              face_n<GeometryInfo<dim>::faces_per_cell;
              ++face_n)
@@ -516,20 +546,32 @@ namespace Step20
 
               for (unsigned int q=0; q<n_face_q_points; ++q)
                 for (unsigned int i=0; i<dofs_per_cell; ++i)
-                  local_rhs(i) += -(fe_face_values[velocities].value (i, q) *
+                 		local_rhs(i) += -(fe_face_values[velocities].value (i, q) *
                                     fe_face_values.normal_vector(q) *
                                     boundary_values[q] *
                                     fe_face_values.JxW(q));
             }
+#endif
 
         cell->get_dof_indices (local_dof_indices);
         for (unsigned int i=0; i<dofs_per_cell; ++i)
           for (unsigned int j=0; j<dofs_per_cell; ++j)
+          {
             system_matrix.add (local_dof_indices[i],
                                local_dof_indices[j],
                                local_matrix(i,j));
+
+            //Experimention for MinRes
+            mono_system_matrix.add (local_dof_indices[i],
+                                           local_dof_indices[j],
+                                           local_matrix(i,j));
+
+          }
         for (unsigned int i=0; i<dofs_per_cell; ++i)
           system_rhs(local_dof_indices[i]) += local_rhs(i);
+
+        //Set face related RHS as constant
+        system_rhs.block(0) = pressure_boundary_values.constant_boundary_value();
       }
   }
 
@@ -713,6 +755,39 @@ namespace Step20
 
       inverse_mass.vmult (solution.block(0), tmp);
     }
+  }
+
+
+  template <int dim>
+  void MixedLaplaceProblem<dim>::solve_minres ()
+  {
+
+      SolverControl solver_control (solution.block(1).size(),
+                                    1e-12);
+      SolverMinRes<> mres (solver_control);
+
+      using std::placeholders::_1;
+      using std::placeholders::_2;
+      using std::placeholders::_3;
+      mres.connect (std::bind (&MixedLaplaceProblem::write_intermediate_solution,
+                                       this,_1,_2,_3));
+
+      int n = 0;
+      Vector<double> temp_solution(solution.block(0).size()+solution.block(1).size());
+      Vector<double> temp_rhs(solution.block(0).size()+solution.block(1).size());
+
+	  std::cout<<"Solution vector using dealii is "<<std::endl;
+	  for (unsigned int i=0; i<2; ++i)
+	  {
+		  for (unsigned int j=0; j<solution.block(i).size(); ++j)
+		  {
+			  temp_solution[n] = solution.block(i)(j);
+			  temp_rhs[n] = system_rhs.block(i)(j);
+			  n++;
+		  }
+	  }
+
+      mres.solve(mono_system_matrix,temp_solution,temp_rhs,PreconditionIdentity());
   }
 
 
@@ -930,11 +1005,11 @@ namespace Step20
     //std::cout<<std::endl<<"Testing the RHS assembly and Matrix Free RHS assembly"<< std::endl;
     //test_rhs_assembly ();
 
-
 //#if 0 //To be opened later
     std::cout<<std::endl<<"Solving the Linear system, ";
     time.restart();
-    solve ();
+    //solve ();
+    solve_minres();
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 
     std::cout<<std::endl<<"Computing the errors, ";
