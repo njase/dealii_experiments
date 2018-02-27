@@ -44,6 +44,8 @@ namespace Step20
 {
   using namespace dealii;
 
+  template<int> class RightHandSide;
+
   template <int dim, int degree_p, typename VectorType>
   class MF_MixedLaplaceProblem
   {
@@ -99,6 +101,7 @@ namespace Step20
           velocity.distribute_local_to_global (dst.block(0));
           pressure.integrate (true,false);
           pressure.distribute_local_to_global (dst.block(1));
+
         }
 
       std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
@@ -108,30 +111,36 @@ namespace Step20
     void
      local_rhs (const MatrixFree<dim,Number> &data,
                   VectorType          &dst,
-                  const VectorType    &src,
+                  const VectorType    &/*src*/,
                   const std::pair<unsigned int,unsigned int> &cell_range) const
-     {
+  {
        typedef VectorizedArray<Number> vector_t;
-       FEEvaluation<dim,degree_p,n_q_points_1d,1,Number> pressure (data, 1); //For scalar elements, use orig FEEvaluation
+       FEEvaluation<dim,degree_p,n_q_points_1d,1,Number> pressure (data, 1);
 
-       const RightHandSide<dim>          right_hand_side;
-       std::vector<double> rhs_values (pressure.n_q_points);
+       const RightHandSide<dim>   right_hand_side;
+       vector_t val;
 
        for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
          {
+    	   pressure.reinit(cell);
 
-    	   //Find quadrature points on real cell for cartesian cells
-    	   auto real_q_points = pressure.mapping_info->quadrature_points;
+    	   for (unsigned int q=0; q<pressure.n_q_points; ++q)
+    	   {
+    		   val = right_hand_side.value(pressure.quadrature_point(q));
 
-           right_hand_side.value_list (fe_values.get_quadrature_points(), ???
-                                       rhs_values);
+    		   pressure.submit_value (-val,q);
+    	   }
 
-           //TBD
+           pressure.integrate (true,false);
+           pressure.distribute_local_to_global (dst.block(1));
          }
+
+       dst.block(0) = 0; //Zero boundary
 
        std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
 
    }
+
 
     void vmult (VectorType &dst,
                 const VectorType &src) const
@@ -194,8 +203,11 @@ namespace Step20
     DoFHandler<dim>      dof_handler_p;
 
     BlockVector<double> 	  mf_solution;
+    BlockVector<double>       mf_rhs;
 
     void test_assembly ();
+
+    void test_rhs_assembly();
   };
 
 
@@ -207,6 +219,10 @@ namespace Step20
 
     virtual double value (const Point<dim>   &p,
                           const unsigned int  component = 0) const;
+
+    template <typename number>
+    VectorizedArray<number> value (const Point<dim,VectorizedArray<number>> &p,
+                                    const unsigned int component = 0) const;
   };
 
 
@@ -234,19 +250,28 @@ namespace Step20
 
 
   template <int dim>
-  double RightHandSide<dim>::value (const Point<dim>  &/*p*/,
+  double RightHandSide<dim>::value (const Point<dim>  &p,
                                     const unsigned int /*component*/) const
   {
-    return 0;
+    //return 0; //as in dealii
+    return 1. / (0.05 + 2.*p.square()); //for experimentation
   }
 
+  template <int dim>
+  template <typename number>
+  VectorizedArray<number> RightHandSide<dim>::value (const Point<dim,VectorizedArray<number>> &p,
+                                  const unsigned int /*component*/) const
+  {
+	  //return VectorizedArray<number>(); //= 0 as in dealii step 20
+      return 1. / (0.05 + 2.*p.square()); //for experimentation
+  }
 
 
   template <int dim>
   double PressureBoundaryValues<dim>::value (const Point<dim>  &p,
                                              const unsigned int /*component*/) const
   {
-	return 0; //zero boundary
+	  return 0; //zero boundary
 #if 0
     const double alpha = 0.3;
     const double beta = 1;
@@ -376,6 +401,7 @@ namespace Step20
         dof_handler_p.distribute_dofs (fe_p);
 
         mf_solution.reinit(solution);
+        mf_rhs.reinit(solution);
 
     	std::vector<const DoFHandler<dim>*> dofs;
         dofs.push_back(&dof_handler_u);
@@ -386,9 +412,11 @@ namespace Step20
         constraints.push_back (&dummy_constraints);
         constraints.push_back (&dummy_constraints);
         QGauss<1> quad(n_q_points_1d);
-        mf_data.reinit (dofs, constraints, quad,
-                        typename MatrixFree<dim>::AdditionalData
-                        (MatrixFree<dim>::AdditionalData::none));
+
+        typename MatrixFree<dim,double>::AdditionalData additional_data;
+        additional_data.mapping_update_flags = update_quadrature_points;
+
+        mf_data.reinit (dofs, constraints, quad, additional_data);
     }
 
   }
@@ -454,6 +482,11 @@ namespace Step20
                   const double        div_phi_j_u = fe_values[velocities].divergence (j, q);
                   const double        phi_j_p     = fe_values[pressure].value (j, q);
 
+#if 0
+                  local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
+                		  	  	  	  - phi_i_p * div_phi_j_u)
+                                       * fe_values.JxW(q);
+#endif
 
                   local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
                                         - div_phi_i_u * phi_j_p
@@ -780,6 +813,69 @@ namespace Step20
   }
 
   template <int dim>
+  void MixedLaplaceProblem<dim>::test_rhs_assembly ()
+  {
+	  //system_rhs is already available
+
+	  typedef  BlockVector<double> VectorType;
+      if (degree != 1)
+      {
+    	  std::cout<<"Matrix free Test not implemented"<<std::endl;
+    	  return;
+      }
+
+	  MF_MixedLaplaceProblem<dim,1,VectorType> mf (mf_data);
+
+      mf.rhsvmult(mf_rhs, BlockVector<double>());
+
+
+      //if (error > 10e-6)
+      //{
+    	  std::cout<<"RHS vector using dealii is "<<std::endl;
+    	  for (unsigned int i=0; i<2; ++i)
+    	  {
+    		  for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
+    		  {
+    			  if (fabs(system_rhs.block(i)(j)) < 10e-6)
+    				  std::cout<<std::setw(10)<<0;
+    			  else
+    				  std::cout<<std::setw(10)<<system_rhs.block(i)(j);
+    		  }
+    		  std::cout<<std::endl;
+    	  }
+
+    	  std::cout<<"RHS vector using MF is "<<std::endl;
+    	  for (unsigned int i=0; i<2; ++i)
+    	  {
+    		  for (unsigned int j=0; j<mf_rhs.block(i).size(); ++j)
+    		  {
+    			  if (fabs(mf_rhs.block(i)(j)) < 10e-6)
+    				  std::cout<<std::setw(10)<<0;
+    			  else
+    				  std::cout<<std::setw(10)<<mf_rhs.block(i)(j);
+    		  }
+    		  std::cout<<std::endl;
+    	  }
+      //}
+
+
+      // Verification
+      double error = 0.;
+      for (unsigned int i=0; i<2; ++i)
+        for (unsigned int j=0; j<system_rhs.block(i).size(); ++j)
+                error += std::fabs (system_rhs.block(i)(j)-mf_rhs.block(i)(j));
+
+      double relative = system_rhs.block(1).l1_norm();
+
+      std::cout<<"Error = "<<error<<" RHS L1 norm = "<<relative<<std::endl;
+
+      std::cout << "  Verification fe degree " << degree  <<  ": "
+                  << error/relative << std::endl << std::endl;
+
+  }
+
+
+  template <int dim>
   void MixedLaplaceProblem<dim>::run ()
   {
 	Timer time;
@@ -794,8 +890,11 @@ namespace Step20
     assemble_system ();
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 
-    std::cout<<std::endl<<"Testing the Matrix assembly and Matrix Free assembly"<< std::endl;
-    test_assembly ();
+    //std::cout<<std::endl<<"Testing the Matrix assembly and Matrix Free assembly"<< std::endl;
+    //test_assembly ();
+
+    //std::cout<<std::endl<<"Testing the RHS assembly and Matrix Free RHS assembly"<< std::endl;
+    //test_rhs_assembly ();
 
 
 #if 0 //To be opened later
