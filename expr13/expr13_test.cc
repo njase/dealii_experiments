@@ -84,25 +84,65 @@ namespace Step20
           pressure.read_dof_values (src.block(1));
           pressure.evaluate (true,false,false);
 
+#if 0 //This is ok for Mu
           for (unsigned int q=0; q<velocity.n_q_points; ++q)
           {
         	  Tensor<1,dim,vector_t> u = velocity.get_value(q);
+              velocity.submit_value (u, q);
+          }
+          velocity.integrate (true,false);
+#endif
+
+#if 0 //This is ok for Mu _ Btu
+          for (unsigned int q=0; q<velocity.n_q_points; ++q)
+          {
         	  Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
 
         	  vector_t pres = pressure.get_value(q);
         	  vector_t div = -trace(grad_u);
         	  pressure.submit_value (div, q);
+          }
+#endif
+
+#if 0 //This is ok for Bu
+          for (unsigned int q=0; q<velocity.n_q_points; ++q)
+          {
+        	  Tensor<2,dim,vector_t> grad_u;
+
+        	  vector_t pres = pressure.get_value(q);
 
               for (unsigned int d=0; d<dim; ++d)
-            	  u[d] -= pres;
+                grad_u[d][d] = -pres;
 
-              velocity.submit_value (u, q);
+              velocity.submit_gradient(grad_u, q);
           }
+          velocity.integrate (false,true);
+#endif
 
-          velocity.integrate (true,false);
+
+#if 0
+          for (unsigned int q=0; q<velocity.n_q_points; ++q)
+          {
+          	  Tensor<2,dim,vector_t> grad_u; // = velocity.get_gradient (q);
+
+        	  vector_t pres = pressure.get_value(q);
+        	  vector_t div = -trace(grad_u);
+        	  pressure.submit_value (div, q);
+
+              //for (unsigned int d=0; d<dim; ++d)
+              //	  u[d] -= pres;
+
+              for (unsigned int d=0; d<dim; ++d)
+                grad_u[d][d] = -pres;
+
+              velocity.submit_gradient(grad_u, q);
+          }
+          velocity.integrate (false,true);
+#endif
+
           velocity.distribute_local_to_global (dst.block(0));
-          pressure.integrate (true,false);
-          pressure.distribute_local_to_global (dst.block(1));
+          //pressure.integrate (true,false);
+          //pressure.distribute_local_to_global (dst.block(1));
 
         }
 
@@ -377,9 +417,9 @@ namespace Step20
     //We can only work cartesian mesh cells in MF version - so let it be as-it-is
 	GridGenerator::hyper_cube (triangulation, -1, 1);
 	//First, lets test on one cell only
-//#if 0
+#if 0
     triangulation.refine_global (3);
-//#endif
+#endif
 
     dof_handler.distribute_dofs (fe);
 
@@ -521,8 +561,14 @@ namespace Step20
 
                   local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
                                         - div_phi_i_u * phi_j_p
+                                        - phi_i_p * div_phi_j_u
+                                       )* fe_values.JxW(q);
+#if 0
+                  local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
+                                        - div_phi_i_u * phi_j_p
                                         - phi_i_p * div_phi_j_u)
                                        * fe_values.JxW(q);
+#endif
                 }
 
               //Since DOFs are ordered as velocity followed by pressure,
@@ -859,6 +905,12 @@ namespace Step20
   template <int dim>
   void MixedLaplaceProblem<dim>::test_assembly ()
   {
+	  //Debug
+	  system_matrix.block(0,0) = 0;
+	  system_matrix.block(1,0) = 0;
+
+
+
 	  //vmult using dealii
 	  system_matrix.vmult (solution, system_rhs);
 
@@ -1000,12 +1052,12 @@ namespace Step20
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 
     //std::cout<<std::endl<<"Testing the Matrix assembly and Matrix Free assembly"<< std::endl;
-    //test_assembly ();
+    test_assembly ();
 
     //std::cout<<std::endl<<"Testing the RHS assembly and Matrix Free RHS assembly"<< std::endl;
     //test_rhs_assembly ();
 
-//#if 0 //To be opened later
+#if 0 //To be opened later
     std::cout<<std::endl<<"Solving the Linear system, ";
     time.restart();
     //solve ();
@@ -1021,7 +1073,7 @@ namespace Step20
     time.restart();
     output_results ();
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
-//#endif
+#endif
   }
 }
 
