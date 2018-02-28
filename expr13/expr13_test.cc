@@ -84,46 +84,12 @@ namespace Step20
           pressure.read_dof_values (src.block(1));
           pressure.evaluate (true,false,false);
 
-//#if 0 //This is ok for Mu
           for (unsigned int q=0; q<velocity.n_q_points; ++q)
           {
         	  Tensor<1,dim,vector_t> u = velocity.get_value(q);
               velocity.submit_value (u, q);
-          }
-          //velocity.integrate (true,false);
-//#endif
 
-#if 0 //This is ok for Mu _ Btu
-          for (unsigned int q=0; q<velocity.n_q_points; ++q)
-          {
-        	  Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
-
-        	  vector_t pres = pressure.get_value(q);
-        	  vector_t div = -trace(grad_u);
-        	  pressure.submit_value (div, q);
-          }
-#endif
-
-//#if 0 //This is ok for Bu
-          for (unsigned int q=0; q<velocity.n_q_points; ++q)
-          {
-        	  Tensor<2,dim,vector_t> grad_u;
-
-        	  vector_t pres = pressure.get_value(q);
-
-              for (unsigned int d=0; d<dim; ++d)
-                grad_u[d][d] = -pres;
-
-              velocity.submit_gradient(grad_u, q);
-          }
-          //velocity.integrate (false,true);
-//#endif
-
-#if 0 //This is ok for Bu and Btu
-          for (unsigned int q=0; q<velocity.n_q_points; ++q)
-          {
-        	  Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
-
+              Tensor<2,dim,vector_t> grad_u = velocity.get_gradient (q);
         	  vector_t pres = pressure.get_value(q);
         	  vector_t div = -trace(grad_u);
         	  pressure.submit_value (div, q);
@@ -134,13 +100,11 @@ namespace Step20
 
               velocity.submit_gradient(grad_u, q);
           }
-          velocity.integrate (false,true);
-#endif
 
           velocity.integrate (true,true);
           velocity.distribute_local_to_global (dst.block(0));
-          //pressure.integrate (true,false);
-          //pressure.distribute_local_to_global (dst.block(1));
+          pressure.integrate (true,false);
+          pressure.distribute_local_to_global (dst.block(1));
 
         }
 
@@ -233,10 +197,6 @@ namespace Step20
     BlockSparsityPattern      sparsity_pattern;
     BlockSparseMatrix<double> system_matrix;
 
-    //Experimentation
-    SparsityPattern      mono_sparsity_pattern;
-    SparseMatrix<double> mono_system_matrix;
-
     BlockVector<double>       solution;
     BlockVector<double>       system_rhs;
 
@@ -258,7 +218,7 @@ namespace Step20
 
     SolverControl::State write_intermediate_solution (const unsigned int    iteration,
                                         const double check_value,
-                                        const Vector<double> &current_iterate) const;
+                                        const BlockVector<double> &current_iterate) const;
   };
 
 
@@ -461,14 +421,6 @@ namespace Step20
     system_rhs.collect_sizes ();
 
 
-    //Experimentation for minres
-    DynamicSparsityPattern mono_dsp(dof_handler.n_dofs());
-    DoFTools::make_sparsity_pattern (dof_handler, mono_dsp);
-    mono_sparsity_pattern.copy_from(mono_dsp);
-
-    mono_system_matrix.reinit (mono_sparsity_pattern);
-
-
     // setup matrix-free structure
     {
         dof_handler_u.distribute_dofs (fe_u);
@@ -557,16 +509,18 @@ namespace Step20
                   const double        div_phi_j_u = fe_values[velocities].divergence (j, q);
                   const double        phi_j_p     = fe_values[pressure].value (j, q);
 
+#if 0
                   local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
                                         - div_phi_i_u * phi_j_p
                                         - phi_i_p * div_phi_j_u
                                        )* fe_values.JxW(q);
-#if 0
+#endif
+//#if 0
                   local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
                                         - div_phi_i_u * phi_j_p
                                         - phi_i_p * div_phi_j_u)
                                        * fe_values.JxW(q);
-#endif
+//#endif
                 }
 
               //Since DOFs are ordered as velocity followed by pressure,
@@ -604,11 +558,6 @@ namespace Step20
             system_matrix.add (local_dof_indices[i],
                                local_dof_indices[j],
                                local_matrix(i,j));
-
-            //Experimention for MinRes
-            mono_system_matrix.add (local_dof_indices[i],
-                                           local_dof_indices[j],
-                                           local_matrix(i,j));
 
           }
         for (unsigned int i=0; i<dofs_per_cell; ++i)
@@ -730,7 +679,7 @@ namespace Step20
   SolverControl::State
   MixedLaplaceProblem<dim>::write_intermediate_solution (const unsigned int    iteration,
                                       const double check_value,
-                                      const Vector<double> &current_iterate) const
+                                      const BlockVector<double> &current_iterate) const
     {
 	  std::cout<<std::endl<<iteration<<"  "<<check_value;
 #if 0
@@ -808,7 +757,7 @@ namespace Step20
 
       SolverControl solver_control (solution.block(1).size(),
                                     1e-12);
-      SolverMinRes<> mres (solver_control);
+      SolverMinRes<BlockVector<double>> mres (solver_control);
 
       using std::placeholders::_1;
       using std::placeholders::_2;
@@ -816,22 +765,7 @@ namespace Step20
       mres.connect (std::bind (&MixedLaplaceProblem::write_intermediate_solution,
                                        this,_1,_2,_3));
 
-      int n = 0;
-      Vector<double> temp_solution(solution.block(0).size()+solution.block(1).size());
-      Vector<double> temp_rhs(solution.block(0).size()+solution.block(1).size());
-
-	  std::cout<<"Solution vector using dealii is "<<std::endl;
-	  for (unsigned int i=0; i<2; ++i)
-	  {
-		  for (unsigned int j=0; j<solution.block(i).size(); ++j)
-		  {
-			  temp_solution[n] = solution.block(i)(j);
-			  temp_rhs[n] = system_rhs.block(i)(j);
-			  n++;
-		  }
-	  }
-
-      mres.solve(mono_system_matrix,temp_solution,temp_rhs,PreconditionIdentity());
+      mres.solve(system_matrix,solution,system_rhs,PreconditionIdentity());
   }
 
 
@@ -925,7 +859,7 @@ namespace Step20
 
       mf.vmult(mf_solution, system_rhs);
 
-
+#if 0
       //if (error > 10e-6)
       //{
     	  std::cout<<"Solution vector using dealii is "<<std::endl;
@@ -954,7 +888,7 @@ namespace Step20
     		  std::cout<<std::endl;
     	  }
       //}
-
+#endif
 
       // Verification
       double error = 0.;
@@ -988,6 +922,7 @@ namespace Step20
       mf.rhsvmult(mf_rhs, BlockVector<double>());
 
 
+#if 0
       //if (error > 10e-6)
       //{
     	  std::cout<<"RHS vector using dealii is "<<std::endl;
@@ -1016,7 +951,7 @@ namespace Step20
     		  std::cout<<std::endl;
     	  }
       //}
-
+#endif
 
       // Verification
       double error = 0.;
@@ -1050,28 +985,28 @@ namespace Step20
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 
     //std::cout<<std::endl<<"Testing the Matrix assembly and Matrix Free assembly"<< std::endl;
-    test_assembly ();
+    //test_assembly ();
 
     //std::cout<<std::endl<<"Testing the RHS assembly and Matrix Free RHS assembly"<< std::endl;
     //test_rhs_assembly ();
 
-#if 0 //To be opened later
+//#if 0 //To be opened later
     std::cout<<std::endl<<"Solving the Linear system, ";
     time.restart();
     //solve ();
     solve_minres();
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 
-    std::cout<<std::endl<<"Computing the errors, ";
-    time.restart();
-    compute_errors ();
-    std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+    //std::cout<<std::endl<<"Computing the errors, ";
+    //time.restart();
+    //compute_errors ();
+    //std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 
     std::cout<<std::endl<<"Printing the results, ";
     time.restart();
     output_results ();
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
-#endif
+//#endif
   }
 }
 
