@@ -39,8 +39,6 @@
 #include <deal.II/matrix_free/matrix_free.h>
 #include <deal.II/matrix_free/fe_evaluation.h>
 
-#include <deal.II/lac/solver_gmres.h>
-
 
 int g_stop = 0;
 std::ofstream logfile ("orig-solution.log");
@@ -186,7 +184,6 @@ namespace Step20
   private:
     void make_grid_and_dofs ();
     void assemble_system ();
-    void solve ();
     void solve_minres ();
     void compute_errors () const;
     void output_results () const;
@@ -220,17 +217,10 @@ namespace Step20
     BlockVector<double>       mf_rhs;
 
     void test_assembly ();
-
     void test_rhs_assembly();
-
     SolverControl::State write_intermediate_solution (const unsigned int    iteration,
                                         const double check_value,
                                         const BlockVector<double> &current_iterate) const;
-
-    SolverControl::State write_mf_intermediate_solution (const unsigned int    iteration,
-                                        const double check_value,
-                                        const BlockVector<double> &current_iterate) const;
-
   };
 
 
@@ -263,17 +253,6 @@ namespace Step20
                           const unsigned int  component = 0) const;
 
     double constant_boundary_value() const;
-  };
-
-
-  template <int dim>
-  class ExactSolution : public Function<dim>
-  {
-  public:
-    ExactSolution () : Function<dim>(dim+1) {}
-
-    virtual void vector_value (const Point<dim> &p,
-                               Vector<double>   &value) const;
   };
 
 
@@ -315,24 +294,6 @@ namespace Step20
 	  Assert(const_bry == true, ExcInvalidState ());
 
 	  return 1; //something const. non-zero boundary. With zero boundary, the iteration does not proceed
-  }
-
-
-
-  template <int dim>
-  void
-  ExactSolution<dim>::vector_value (const Point<dim> &p,
-                                    Vector<double>   &values) const
-  {
-    Assert (values.size() == dim+1,
-            ExcDimensionMismatch (values.size(), dim+1));
-
-    const double alpha = 0.3;
-    const double beta = 1;
-
-    values(0) = alpha*p[1]*p[1]/2 + beta - alpha*p[0]*p[0]/2;
-    values(1) = alpha*p[0]*p[1];
-    values(2) = -(alpha*p[0]*p[1]*p[1]/2 + beta*p[0] - alpha*p[0]*p[0]*p[0]/6);
   }
 
 
@@ -384,7 +345,7 @@ namespace Step20
   template <int dim>
   void MixedLaplaceProblem<dim>::make_grid_and_dofs ()
   {
-    //We can only work cartesian mesh cells in MF version - so let it be as-it-is
+    //We can only work on cartesian mesh cells in MF version - so let it be as-it-is
 	GridGenerator::hyper_cube (triangulation, -1, 1);
 	//First, lets test on one cell only
 //#if 0
@@ -573,121 +534,12 @@ namespace Step20
   }
 
 
-  template <class MatrixType>
-  class InverseMatrix : public Subscriptor
-  {
-  public:
-    InverseMatrix(const MatrixType &m);
-
-    void vmult(Vector<double>       &dst,
-               const Vector<double> &src) const;
-
-  private:
-    const SmartPointer<const MatrixType> matrix;
-  };
-
-
-  template <class MatrixType>
-  InverseMatrix<MatrixType>::InverseMatrix (const MatrixType &m)
-    :
-    matrix (&m)
-  {}
-
-
-  template <class MatrixType>
-  void InverseMatrix<MatrixType>::vmult (Vector<double>       &dst,
-                                         const Vector<double> &src) const
-  {
-    SolverControl solver_control (std::max(src.size(), static_cast<std::size_t> (200)),
-                                  1e-8*src.l2_norm());
-    SolverCG<>    cg (solver_control);
-
-    dst = 0;
-
-    cg.solve (*matrix, dst, src, PreconditionIdentity());
-  }
-
-
-  class SchurComplement : public Subscriptor
-  {
-  public:
-    SchurComplement (const BlockSparseMatrix<double>            &A,
-                     const InverseMatrix<SparseMatrix<double> > &Minv);
-
-    void vmult (Vector<double>       &dst,
-                const Vector<double> &src) const;
-
-  private:
-    const SmartPointer<const BlockSparseMatrix<double> > system_matrix;
-    const SmartPointer<const InverseMatrix<SparseMatrix<double> > > m_inverse;
-
-    mutable Vector<double> tmp1, tmp2;
-  };
-
-
-  SchurComplement
-  ::SchurComplement (const BlockSparseMatrix<double>            &A,
-                     const InverseMatrix<SparseMatrix<double> > &Minv)
-    :
-    system_matrix (&A),
-    m_inverse (&Minv),
-    tmp1 (A.block(0,0).m()),
-    tmp2 (A.block(0,0).m())
-  {}
-
-
-  void SchurComplement::vmult (Vector<double>       &dst,
-                               const Vector<double> &src) const
-  {
-    system_matrix->block(0,1).vmult (tmp1, src);
-    m_inverse->vmult (tmp2, tmp1);
-    system_matrix->block(1,0).vmult (dst, tmp2);
-  }
-
-  class ApproximateSchurComplement : public Subscriptor
-  {
-  public:
-    ApproximateSchurComplement (const BlockSparseMatrix<double> &A);
-
-    void vmult (Vector<double>       &dst,
-                const Vector<double> &src) const;
-
-  private:
-    const SmartPointer<const BlockSparseMatrix<double> > system_matrix;
-
-    mutable Vector<double> tmp1, tmp2;
-  };
-
-
-
-  ApproximateSchurComplement::ApproximateSchurComplement
-  (const BlockSparseMatrix<double> &A) :
-    system_matrix (&A),
-    tmp1 (A.block(0,0).m()),
-    tmp2 (A.block(0,0).m())
-  {}
-
-
-  void
-  ApproximateSchurComplement::vmult
-  (Vector<double>       &dst,
-   const Vector<double> &src) const
-  {
-    system_matrix->block(0,1).vmult (tmp1, src);
-    system_matrix->block(0,0).precondition_Jacobi (tmp2, tmp1);
-    system_matrix->block(1,0).vmult (dst, tmp2);
-  }
-
-
   template <int dim>
   SolverControl::State
   MixedLaplaceProblem<dim>::write_intermediate_solution (const unsigned int    iteration,
                                       const double check_value,
                                       const BlockVector<double> &current_iterate) const
     {
-
-	  //std::cout<<std::endl<<iteration<<"  "<<check_value;
-
 	  logfile<<"ITERATION "<<iteration<<"("<<check_value<<") = ";
 	  for (int i=0; i<2; i++)
 		  for (int j=0; j<current_iterate.block(i).size(); j++)
@@ -717,150 +569,8 @@ namespace Step20
     }
 
   template <int dim>
-  SolverControl::State
-  MixedLaplaceProblem<dim>::write_mf_intermediate_solution (const unsigned int    iteration,
-                                      const double check_value,
-                                      const BlockVector<double> &current_iterate) const
-    {
-	  newlogfile<<"ITERATION "<<iteration<<"("<<check_value<<") = ";
-	  for (int i=0; i<2; i++)
-		  for (int j=0; j<current_iterate.block(i).size(); j++)
-			  newlogfile << current_iterate.block(i)(j)<<"  ";
-	  newlogfile<<std::endl;
-
-	  g_stop++;
-
-#if 0
-	  if (g_stop == 100)
-	  {
-		  newlogfile.close();
-		  return SolverControl::failure; //Just to break out
-	  }
-#endif
-
-      return SolverControl::success;
-    }
-
-
-  template <int dim>
-  void MixedLaplaceProblem<dim>::solve ()
-  {
-    InverseMatrix<SparseMatrix<double> > inverse_mass (system_matrix.block(0,0));
-    Vector<double> tmp (solution.block(0).size());
-
-    // Now on to the first equation. The right hand side of it is $B^TM^{-1}F-G$,
-    // which is what we compute in the first few lines:
-    {
-      SchurComplement schur_complement (system_matrix, inverse_mass);
-      Vector<double> schur_rhs (solution.block(1).size());
-      inverse_mass.vmult (tmp, system_rhs.block(0));
-      system_matrix.block(1,0).vmult (schur_rhs, tmp);
-      schur_rhs -= system_rhs.block(1);
-
-      // Now that we have the right hand side we can go ahead and solve for the
-      // pressure, using our approximation of the inverse as a preconditioner:
-      SolverControl solver_control (solution.block(1).size(),
-                                    1e-12*schur_rhs.l2_norm());
-      SolverCG<> cg (solver_control);
-
-
-      //////////Experiment
-
-      using std::placeholders::_1;
-      using std::placeholders::_2;
-      using std::placeholders::_3;
-      cg.connect (std::bind (&MixedLaplaceProblem::write_intermediate_solution,
-                                       this,_1,_2,_3));
-	  //////////Experiment
-
-      ApproximateSchurComplement approximate_schur (system_matrix);
-      InverseMatrix<ApproximateSchurComplement> approximate_inverse
-      (approximate_schur);
-      cg.solve (schur_complement, solution.block(1), schur_rhs,
-                approximate_inverse);
-
-      std::cout << solver_control.last_step()
-                << " CG Schur complement iterations to obtain convergence."
-                << std::endl;
-    }
-
-    // After we have the pressure, we can compute the velocity. The equation
-    // reads $MU=-BP+F$, and we solve it by first computing the right hand
-    // side, and then multiplying it with the object that represents the
-    // inverse of the mass matrix:
-    {
-      system_matrix.block(0,1).vmult (tmp, solution.block(1));
-      tmp *= -1;
-      tmp += system_rhs.block(0);
-
-      inverse_mass.vmult (solution.block(0), tmp);
-    }
-  }
-
-
-  template <int dim>
   void MixedLaplaceProblem<dim>::solve_minres ()
   {
-
-#if 0
-	  ////Debug..
-	  BlockVector<double> x_zero(solution);
-	  x_zero.block(0) = 0;
-	  x_zero.block(1) = 0;
-	  BlockVector<double> v(x_zero);
-
-	  BlockVector<double> m(solution);
-	  BlockVector<double> u(solution);
-	  PreconditionIdentity preconditioner = PreconditionIdentity();
-
-	  double delta = 0;
-	  double r0 = 0;
-
-	  //Steps: --> For dealii -- match
-	  system_matrix.vmult(m,solution);
-	  u = system_rhs;
-	  u -= m;
-	  preconditioner.vmult (v,u);
-	  delta = v * u;
-	  r0 = std::sqrt(delta);
-
-
-	  //Steps:: --> For MF
-      typedef  BlockVector<double> VectorType;
-      MF_MixedLaplaceProblem<dim,1,VectorType> mf_debug (mf_data);
-      BlockVector<double>   mf_rhs_debug(mf_rhs);
-      mf_debug.rhsvmult(mf_rhs_debug, BlockVector<double>());
-
-      mf_debug.vmult(m,mf_solution);
-	  u = mf_rhs_debug;
-	  u -= m;
-	  preconditioner.vmult (v,u);
-	  delta = v * u;
-	  r0 = std::sqrt(delta);
-#endif
-
-#if 0
-	  A.vmult(*m[0],x);
-	  *u[1] = b;
-	  *u[1] -= *m[0];
-	  // Precondition is applied.
-	  // The preconditioner has to be
-	  // positive definite and symmetric
-
-	  // M v = u[1]
-	  preconditioner.vmult (v,*u[1]);
-
-	  delta[1] = v * (*u[1]);
-	  // Preconditioner positive
-	  Assert (delta[1]>=0, ExcPreconditionerNotDefinite());
-
-	  r0 = std::sqrt(delta[1]);
-	  r_l2 = r0;
-#endif
-
-
-	  ///Debug end
-
       SolverControl solver_control (500 /*solution.block(1).size()*/,
                                     1e-12);
       SolverMinRes<BlockVector<double>> mres (solver_control);
@@ -871,78 +581,72 @@ namespace Step20
       auto conn = mres.connect (std::bind (&MixedLaplaceProblem::write_intermediate_solution,
                                        this,_1,_2,_3));
 
+      logfile<<"Intermediate results with traditional approach"<<std::endl;
       mres.solve(system_matrix,solution,system_rhs,PreconditionIdentity());
 
-      logfile.close(); //In case we reach here, close log file
-      conn.disconnect();
 
-
+      logfile<<std::endl<<std::endl<<"Intermediate results with MatrixFree approach"<<std::endl;
       typedef  BlockVector<double> VectorType;
       MF_MixedLaplaceProblem<dim,1,VectorType> mf (mf_data);
-      mres.connect (std::bind (&MixedLaplaceProblem::write_mf_intermediate_solution,
-                                             this,_1,_2,_3));
       mf.rhsvmult(mf_rhs, BlockVector<double>());
       mres.solve(mf,mf_solution,mf_rhs,PreconditionIdentity());
-      newlogfile.close(); //In case we reach here, close log file
 
-#if 0
-      std::cout<<"MinRes using MF gives"<<std::endl;
-      //Minres using MF
-      SolverControl solver_control_1 (10e+6,
-                                    1e-4);
-      SolverGMRES<BlockVector<double>> gmres (solver_control_1);
-      gmres.connect (std::bind (&MixedLaplaceProblem::write_intermediate_solution,
-                                       this,_1,_2,_3));
 
-      typedef  BlockVector<double> VectorType;
-      MF_MixedLaplaceProblem<dim,1,VectorType> mf (mf_data);
-      mf.rhsvmult(mf_rhs, BlockVector<double>());
-      gmres.solve(mf,mf_solution,mf_rhs,PreconditionIdentity());
-#endif
+      logfile.close();
   }
 
 
   template <int dim>
   void MixedLaplaceProblem<dim>::compute_errors () const
   {
-    const ComponentSelectFunction<dim>
-    pressure_mask (dim, dim+1);
-    const ComponentSelectFunction<dim>
-    velocity_mask(std::make_pair(0, dim), dim+1);
+	        // Verification
+	        double error = 0.;
+	        for (unsigned int i=0; i<2; ++i)
+	          for (unsigned int j=0; j<solution.block(i).size(); ++j)
+	                  error += std::fabs (solution.block(i)(j)-mf_solution.block(i)(j));
 
-    ExactSolution<dim> exact_solution;
-    Vector<double> cellwise_errors (triangulation.n_active_cells());
+	        double relative = solution.block(0).l1_norm();
 
-    QTrapez<1>     q_trapez;
-    QIterated<dim> quadrature (q_trapez, n_q_points_1d);
+	        std::cout<<"Error = "<<error<<" solution L1 norm = "<<relative<<std::endl;
 
-    // With this, we can then let the library compute the errors and output
-    // them to the screen:
-    VectorTools::integrate_difference (dof_handler, solution, exact_solution,
-                                       cellwise_errors, quadrature,
-                                       VectorTools::L2_norm,
-                                       &pressure_mask);
-    const double p_l2_error = VectorTools::compute_global_error(triangulation,
-                                                                cellwise_errors,
-                                                                VectorTools::L2_norm);
+	        std::cout << "  Verification fe degree " << degree  <<  ": "
+	                    << error/relative << std::endl << std::endl;
 
-    VectorTools::integrate_difference (dof_handler, solution, exact_solution,
-                                       cellwise_errors, quadrature,
-                                       VectorTools::L2_norm,
-                                       &velocity_mask);
-    const double u_l2_error = VectorTools::compute_global_error(triangulation,
-                                                                cellwise_errors,
-                                                                VectorTools::L2_norm);
+	  	        if (error > 10e-6)
+	  	        {
+	  	      	  std::cout<<"Solution vector using dealii is "<<std::endl;
+	  	      	  for (unsigned int i=0; i<2; ++i)
+	  	      	  {
+	  	      		  for (unsigned int j=0; j<solution.block(i).size(); ++j)
+	  	      		  {
+	  	      			  if (fabs(solution.block(i)(j)) < 10e-6)
+	  	      				  std::cout<<std::setw(10)<<0;
+	  	      			  else
+	  	      				  std::cout<<std::setw(10)<<solution.block(i)(j);
+	  	      		  }
+	  	      		  std::cout<<std::endl;
+	  	      	  }
 
-    std::cout << "Errors: ||e_p||_L2 = " << p_l2_error
-              << ",   ||e_u||_L2 = " << u_l2_error
-              << std::endl;
+	  	      	  std::cout<<"Solution vector using MF is "<<std::endl;
+	  	      	  for (unsigned int i=0; i<2; ++i)
+	  	      	  {
+	  	      		  for (unsigned int j=0; j<mf_solution.block(i).size(); ++j)
+	  	      		  {
+	  	      			  if (fabs(mf_solution.block(i)(j)) < 10e-6)
+	  	      				  std::cout<<std::setw(10)<<0;
+	  	      			  else
+	  	      				  std::cout<<std::setw(10)<<mf_solution.block(i)(j);
+	  	      		  }
+	  	      		  std::cout<<std::endl;
+	  	      	  }
+	  	        }
   }
 
 
   template <int dim>
   void MixedLaplaceProblem<dim>::output_results () const
   {
+#if 0
     std::vector<std::string> solution_names(dim, "u");
     solution_names.push_back ("p");
     std::vector<DataComponentInterpretation::DataComponentInterpretation>
@@ -965,22 +669,13 @@ namespace Step20
     }
     
     logfile.close();
+#endif
+
   }
 
   template <int dim>
   void MixedLaplaceProblem<dim>::test_assembly ()
   {
-#if 0
-	  //Testing
-	  BlockVector<double>  test_system_rhs(system_rhs);
-	  test_system_rhs.block(0) = 0;
-	  test_system_rhs.block(1) = 0;
-	  solution.block(0) = 1;
-	  solution.block(1) = 1;
-	  mf_solution.block(0) = 2;
-	  mf_solution.block(1) = 2;
-#endif
-
 	  //vmult using dealii
 	  system_matrix.vmult (solution, system_rhs);
 
@@ -1135,10 +830,10 @@ namespace Step20
     solve_minres();
     std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 
-    //std::cout<<std::endl<<"Computing the errors, ";
-    //time.restart();
-    //compute_errors ();
-    //std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
+    std::cout<<std::endl<<"Computing the errors, ";
+    time.restart();
+    compute_errors ();
+    std::cout<<"Time taken CPU/WALL = "<<time.cpu_time() << "s/" << time.wall_time() << "s" << std::endl;
 
     std::cout<<std::endl<<"Printing the results, ";
     time.restart();
