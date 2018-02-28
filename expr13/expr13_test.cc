@@ -39,7 +39,12 @@
 #include <deal.II/matrix_free/matrix_free.h>
 #include <deal.II/matrix_free/fe_evaluation.h>
 
+#include <deal.II/lac/solver_gmres.h>
 
+
+int g_stop = 0;
+std::ofstream logfile ("orig-solution.log");
+std::ofstream newlogfile ("new-solution.log");
 
 namespace Step20
 {
@@ -108,7 +113,7 @@ namespace Step20
 
         }
 
-      std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
+      //std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
 
   }
 
@@ -143,7 +148,7 @@ namespace Step20
 
        dst.block(0) = pressure_boundary_values.constant_boundary_value();
 
-       std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
+       //std::cout<<"Loop was internally run from "<<cell_range.first<<" to "<<cell_range.second<<std::endl;
 
    }
 
@@ -151,6 +156,8 @@ namespace Step20
     void vmult (VectorType &dst,
                 const VectorType &src) const
     {
+    	dst.block(0) = 0;
+    	dst.block(1) = 0;
   	  data.cell_loop (&MF_MixedLaplaceProblem<dim,degree_p,VectorType>::local_apply_vector,
                     this, dst, src);
 
@@ -219,6 +226,11 @@ namespace Step20
     SolverControl::State write_intermediate_solution (const unsigned int    iteration,
                                         const double check_value,
                                         const BlockVector<double> &current_iterate) const;
+
+    SolverControl::State write_mf_intermediate_solution (const unsigned int    iteration,
+                                        const double check_value,
+                                        const BlockVector<double> &current_iterate) const;
+
   };
 
 
@@ -509,18 +521,10 @@ namespace Step20
                   const double        div_phi_j_u = fe_values[velocities].divergence (j, q);
                   const double        phi_j_p     = fe_values[pressure].value (j, q);
 
-#if 0
-                  local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
-                                        - div_phi_i_u * phi_j_p
-                                        - phi_i_p * div_phi_j_u
-                                       )* fe_values.JxW(q);
-#endif
-//#if 0
                   local_matrix(i,j) += (phi_i_u * k_inverse_values[q] * phi_j_u
                                         - div_phi_i_u * phi_j_p
                                         - phi_i_p * div_phi_j_u)
                                        * fe_values.JxW(q);
-//#endif
                 }
 
               //Since DOFs are ordered as velocity followed by pressure,
@@ -681,7 +685,25 @@ namespace Step20
                                       const double check_value,
                                       const BlockVector<double> &current_iterate) const
     {
-	  std::cout<<std::endl<<iteration<<"  "<<check_value;
+
+	  //std::cout<<std::endl<<iteration<<"  "<<check_value;
+
+	  logfile<<"ITERATION "<<iteration<<"("<<check_value<<") = ";
+	  for (int i=0; i<2; i++)
+		  for (int j=0; j<current_iterate.block(i).size(); j++)
+	  		  logfile << current_iterate.block(i)(j)<<"  ";
+	  logfile<<std::endl;
+
+	  g_stop++;
+
+#if 0
+	  if (g_stop == 100)
+	  {
+		  logfile.close();
+		  return SolverControl::failure; //Just to break out
+	  }
+#endif
+
 #if 0
       DataOut<2> data_out;
       data_out.attach_dof_handler (dof_handler);
@@ -691,6 +713,31 @@ namespace Step20
                              + Utilities::int_to_string(iteration,4) + ".vtu").c_str());
       data_out.write_vtu (output);
 #endif
+      return SolverControl::success;
+    }
+
+  template <int dim>
+  SolverControl::State
+  MixedLaplaceProblem<dim>::write_mf_intermediate_solution (const unsigned int    iteration,
+                                      const double check_value,
+                                      const BlockVector<double> &current_iterate) const
+    {
+	  newlogfile<<"ITERATION "<<iteration<<"("<<check_value<<") = ";
+	  for (int i=0; i<2; i++)
+		  for (int j=0; j<current_iterate.block(i).size(); j++)
+			  newlogfile << current_iterate.block(i)(j)<<"  ";
+	  newlogfile<<std::endl;
+
+	  g_stop++;
+
+#if 0
+	  if (g_stop == 100)
+	  {
+		  newlogfile.close();
+		  return SolverControl::failure; //Just to break out
+	  }
+#endif
+
       return SolverControl::success;
     }
 
@@ -755,17 +802,103 @@ namespace Step20
   void MixedLaplaceProblem<dim>::solve_minres ()
   {
 
-      SolverControl solver_control (solution.block(1).size(),
+#if 0
+	  ////Debug..
+	  BlockVector<double> x_zero(solution);
+	  x_zero.block(0) = 0;
+	  x_zero.block(1) = 0;
+	  BlockVector<double> v(x_zero);
+
+	  BlockVector<double> m(solution);
+	  BlockVector<double> u(solution);
+	  PreconditionIdentity preconditioner = PreconditionIdentity();
+
+	  double delta = 0;
+	  double r0 = 0;
+
+	  //Steps: --> For dealii -- match
+	  system_matrix.vmult(m,solution);
+	  u = system_rhs;
+	  u -= m;
+	  preconditioner.vmult (v,u);
+	  delta = v * u;
+	  r0 = std::sqrt(delta);
+
+
+	  //Steps:: --> For MF
+      typedef  BlockVector<double> VectorType;
+      MF_MixedLaplaceProblem<dim,1,VectorType> mf_debug (mf_data);
+      BlockVector<double>   mf_rhs_debug(mf_rhs);
+      mf_debug.rhsvmult(mf_rhs_debug, BlockVector<double>());
+
+      mf_debug.vmult(m,mf_solution);
+	  u = mf_rhs_debug;
+	  u -= m;
+	  preconditioner.vmult (v,u);
+	  delta = v * u;
+	  r0 = std::sqrt(delta);
+#endif
+
+#if 0
+	  A.vmult(*m[0],x);
+	  *u[1] = b;
+	  *u[1] -= *m[0];
+	  // Precondition is applied.
+	  // The preconditioner has to be
+	  // positive definite and symmetric
+
+	  // M v = u[1]
+	  preconditioner.vmult (v,*u[1]);
+
+	  delta[1] = v * (*u[1]);
+	  // Preconditioner positive
+	  Assert (delta[1]>=0, ExcPreconditionerNotDefinite());
+
+	  r0 = std::sqrt(delta[1]);
+	  r_l2 = r0;
+#endif
+
+
+	  ///Debug end
+
+      SolverControl solver_control (500 /*solution.block(1).size()*/,
                                     1e-12);
       SolverMinRes<BlockVector<double>> mres (solver_control);
 
       using std::placeholders::_1;
       using std::placeholders::_2;
       using std::placeholders::_3;
-      mres.connect (std::bind (&MixedLaplaceProblem::write_intermediate_solution,
+      auto conn = mres.connect (std::bind (&MixedLaplaceProblem::write_intermediate_solution,
                                        this,_1,_2,_3));
 
       mres.solve(system_matrix,solution,system_rhs,PreconditionIdentity());
+
+      logfile.close(); //In case we reach here, close log file
+      conn.disconnect();
+
+
+      typedef  BlockVector<double> VectorType;
+      MF_MixedLaplaceProblem<dim,1,VectorType> mf (mf_data);
+      mres.connect (std::bind (&MixedLaplaceProblem::write_mf_intermediate_solution,
+                                             this,_1,_2,_3));
+      mf.rhsvmult(mf_rhs, BlockVector<double>());
+      mres.solve(mf,mf_solution,mf_rhs,PreconditionIdentity());
+      newlogfile.close(); //In case we reach here, close log file
+
+#if 0
+      std::cout<<"MinRes using MF gives"<<std::endl;
+      //Minres using MF
+      SolverControl solver_control_1 (10e+6,
+                                    1e-4);
+      SolverGMRES<BlockVector<double>> gmres (solver_control_1);
+      gmres.connect (std::bind (&MixedLaplaceProblem::write_intermediate_solution,
+                                       this,_1,_2,_3));
+
+      typedef  BlockVector<double> VectorType;
+      MF_MixedLaplaceProblem<dim,1,VectorType> mf (mf_data);
+      mf.rhsvmult(mf_rhs, BlockVector<double>());
+      gmres.solve(mf,mf_solution,mf_rhs,PreconditionIdentity());
+#endif
   }
 
 
@@ -837,11 +970,16 @@ namespace Step20
   template <int dim>
   void MixedLaplaceProblem<dim>::test_assembly ()
   {
-	  //Debug
-	  //system_matrix.block(0,0) = 0;
-	  //system_matrix.block(1,0) = 0;
-
-
+#if 0
+	  //Testing
+	  BlockVector<double>  test_system_rhs(system_rhs);
+	  test_system_rhs.block(0) = 0;
+	  test_system_rhs.block(1) = 0;
+	  solution.block(0) = 1;
+	  solution.block(1) = 1;
+	  mf_solution.block(0) = 2;
+	  mf_solution.block(1) = 2;
+#endif
 
 	  //vmult using dealii
 	  system_matrix.vmult (solution, system_rhs);
@@ -859,7 +997,7 @@ namespace Step20
 
       mf.vmult(mf_solution, system_rhs);
 
-#if 0
+//#if 0
       //if (error > 10e-6)
       //{
     	  std::cout<<"Solution vector using dealii is "<<std::endl;
@@ -888,7 +1026,7 @@ namespace Step20
     		  std::cout<<std::endl;
     	  }
       //}
-#endif
+//#endif
 
       // Verification
       double error = 0.;
