@@ -238,7 +238,6 @@ std::ofstream logfile("output");
     DoFHandler<dim>      dof_handler_p;
 
     BlockVector<double> 	  mf_solution;
-    BlockVector<double>       mf_rhs;
   };
 
 
@@ -326,7 +325,6 @@ std::ofstream logfile("output");
         dof_handler_p.distribute_dofs (fe_p);
 
         mf_solution.reinit(solution);
-        mf_rhs.reinit(solution);
 
     	std::vector<const DoFHandler<dim>*> dofs;
         dofs.push_back(&dof_handler_u);
