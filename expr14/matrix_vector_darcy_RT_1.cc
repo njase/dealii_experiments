@@ -399,7 +399,6 @@
             system_matrix.add (local_dof_indices[i],
                                local_dof_indices[j],
                                local_matrix(i,j));
-
           }
       }
 
@@ -465,7 +464,7 @@
   {
 	  //vmult using MF
       typedef  BlockVector<double> VectorType;
-      MF_MixedLaplace<dim,1,VectorType> mf (mf_data);
+      MF_MixedLaplace<dim,degree,VectorType> mf (mf_data);
 
 	  if (OP_A == id)
 	  {
@@ -556,7 +555,8 @@ int main ()
 
 
       //TestMixedLaplace<2> mixed_laplace_problem(0);
-      TestMixedLaplace<dim, degree> test;
+      //TestMixedLaplace<dim, degree> test;
+      TestMixedLaplace<2, 2> test;
       test.run ();
     }
   catch (std::exception &exc)
