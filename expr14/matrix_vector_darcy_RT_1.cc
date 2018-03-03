@@ -5,8 +5,11 @@
  * The results of matrix-vector products are compared with the result of
  * deal.II sparse matrix. No hanging nodes and no other constraints.
  */
+//This test should be added to dealii tests
 
 #include "tests.h"
+
+std::ofstream logfile("output");
 
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/logstream.h>
@@ -426,6 +429,9 @@
 
 	        std::cout<<"Error = "<<error<<" Relative error = "<<error/relative<<std::endl;
 
+	        deallog << "  Verification fe degree " << degree  <<  ": "
+	                << error/relative << std::endl << std::endl;
+
 	  	    if (error > 10e-6)
 	  	    {
 	  	      std::cout<<"Solution vector using dealii is "<<std::endl;
@@ -538,26 +544,18 @@
 
 int main ()
 {
+	  deallog.attach(logfile);
+
+	  deallog << std::setprecision (3);
+
   try
     {
-      using namespace dealii;
-
-      //Observations on dealii version of code:
-      //degree 1 gives bad results. deg0,2, and onwards give good results
-      constexpr int dim = 2;
-      constexpr int degree = 1;
-
-      if (degree != 1)
-      {
-    	  std::cout<<"Matrix free Test not implemented"<<std::endl;
-    	  return -1;
-      }
-
-
-      //TestMixedLaplace<2> mixed_laplace_problem(0);
-      //TestMixedLaplace<dim, degree> test;
-      TestMixedLaplace<2, 2> test;
-      test.run ();
+	  deallog << std::endl << "Test with doubles" << std::endl << std::endl;
+	  deallog.push("2d");
+      TestMixedLaplace<2, 0> test1; test1.run(); //ok
+      TestMixedLaplace<2, 1> test2; test2.run(); //ok
+      TestMixedLaplace<2, 2> test3; test3.run(); //ok
+      deallog.pop();
     }
   catch (std::exception &exc)
     {
