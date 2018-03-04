@@ -87,7 +87,7 @@ std::ofstream logfile("output");
                  const std::pair<unsigned int,unsigned int> &cell_range) const
     {
       typedef VectorizedArray<Number> vector_t;
-      FEEvaluationGen<FE_Q<dim>,n_q_points_1d,dim,degree_p+1,Number> velocity (data, 0);
+      FEEvaluationAni<FE_Q<dim>,dim,degree_p+1,n_q_points_1d,Number> velocity (data, 0);
 
       for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
         {
@@ -113,7 +113,7 @@ std::ofstream logfile("output");
                  const std::pair<unsigned int,unsigned int> &cell_range) const
     {
       typedef VectorizedArray<Number> vector_t;
-      FEEvaluationGen<FE_Q<dim>,n_q_points_1d,dim,degree_p+1,Number> velocity (data, 0);
+      FEEvaluationAni<FE_Q<dim>,dim,degree_p+1,n_q_points_1d,Number> velocity (data, 0);
       FEEvaluation<dim,degree_p,n_q_points_1d,1,Number> pressure (data, 1); //For scalar elements, use orig FEEvaluation
 
       for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
@@ -153,7 +153,7 @@ std::ofstream logfile("output");
                  const std::pair<unsigned int,unsigned int> &cell_range) const
     {
       typedef VectorizedArray<Number> vector_t;
-      FEEvaluationGen<FE_Q<dim>,n_q_points_1d,dim,degree_p+1,Number> velocity (data, 0);
+      FEEvaluationAni<FE_Q<dim>,dim,degree_p+1,n_q_points_1d,Number> velocity (data, 0);
       FEEvaluation<dim,degree_p,n_q_points_1d,1,Number> pressure (data, 1); //For scalar elements, use orig FEEvaluation
 
       for (unsigned int cell=cell_range.first; cell<cell_range.second; ++cell)
@@ -282,10 +282,7 @@ std::ofstream logfile("output");
   {
     //We can only work on cartesian mesh cells in MF version - so let it be as-it-is
 	GridGenerator::hyper_cube (triangulation, -1, 1);
-	//First, lets test on one cell only
-//#if 0
     triangulation.refine_global (3);
-//#endif
 
     dof_handler.distribute_dofs (fe);
 

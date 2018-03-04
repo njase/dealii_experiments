@@ -8,8 +8,8 @@
  * not supported.
  * Notable differences from Step-20:
  * 1. Only cartesian mesh cells should be used
- * 2. Permeability tensor must be Identity Matrix
- * 3. Face integrals cant be evaluated. the corresponding RHS integration
+ * 2. Permeability tensor must be proportional to Identity Matrix
+ * 3. Face integrals can't be evaluated. the corresponding RHS integration
  *    term has to be provided from outside the MF framework (we take it
  *    as constant in this test)
  * 4. MinRes Solver is used - This is not a limitation, but used only for
@@ -445,7 +445,7 @@ private:
                    const std::pair<unsigned int,unsigned int> &cell_range) const
       {
         typedef VectorizedArray<Number> vector_t;
-        FEEvaluationGen<FE_RaviartThomas<dim>,n_q_points_1d,dim,degree,Number> velocity (data, 0);
+        FEEvaluationAni<FE_RaviartThomas<dim>,dim,degree,n_q_points_1d,Number> velocity (data, 0);
         FEEvaluation<dim,degree,n_q_points_1d,1,Number> pressure (data, 1); //For scalar elements, use orig FEEvaluation
 
 
